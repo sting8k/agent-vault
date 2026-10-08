@@ -14,6 +14,9 @@ type IO struct {
 	Env    []string // os.Environ() form; read AGV_HOME etc. from here, never os.Getenv
 }
 
+// Version is printed by --version. main sets it from the build.
+var Version = "dev"
+
 type command func(args []string, io IO) int
 
 // Each command lives in its own file so separate scopes do not edit the same file.
@@ -31,6 +34,10 @@ func Main(args []string, stdin io.Reader, stdout, stderr io.Writer, env []string
 	io := IO{Stdin: stdin, Stdout: stdout, Stderr: stderr, Env: env}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		fmt.Fprint(stdout, usage)
+		return 0
+	}
+	if args[0] == "--version" {
+		fmt.Fprintln(stdout, "agv "+Version)
 		return 0
 	}
 	cmd, ok := commands[args[0]]
