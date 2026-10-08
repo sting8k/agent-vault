@@ -1,2 +1,4 @@
 .harness/bin/
 .harness-backup/
+/agv
+/dist/
