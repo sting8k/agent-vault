@@ -64,6 +64,8 @@ func TestRunHelperProcess(t *testing.T) {
 		for _, a := range args {
 			fmt.Println(a)
 		}
+	case "stdin": // copies its stdin to stdout
+		io.Copy(os.Stdout, os.Stdin)
 	case "leak": // prints the secret as the child got it, then transformed
 		v := os.Getenv("TOKEN")
 		fmt.Println("raw:" + v)

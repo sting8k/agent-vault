@@ -52,3 +52,19 @@ func TestRunRefusesWithoutSeparator(t *testing.T) {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}
 }
+
+// `agv run -- psql ... < file.sql` must work: the child reads agv's own stdin.
+func TestChildInheritsStdin(t *testing.T) {
+	useTestVault(t)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	go func() { w.WriteString("select 1;\n"); w.Close() }()
+	var out, errb bytes.Buffer
+	code := Main([]string{"run", "--", os.Args[0], "-test.run=^TestRunHelperProcess$", "--", "stdin"}, r, &out, &errb, helperEnv(t))
+	if code != 0 || out.String() != "select 1;\n" {
+		t.Fatalf("code %d stdout %q stderr %q", code, out.String(), errb.String())
+	}
+}

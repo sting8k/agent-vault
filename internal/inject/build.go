@@ -113,10 +113,24 @@ func (b *builder) envSettings(req Request) ([]setting, error) {
 			}
 		}
 		if count == 0 {
-			return nil, fmt.Errorf("--env-from: %s has no field with an env name", n)
+			return nil, noEnvFields(n, entry)
 		}
 	}
 	return set, nil
+}
+
+// noEnvFields is the error for --env-from on an entry without env names. It
+// points at --env, using a real field name (plaintext metadata, never a value)
+// and the file form for a file field.
+func noEnvFields(name string, entry map[string]Field) error {
+	field, ref := "field", ""
+	if keys := sortedKeys(entry); len(keys) > 0 {
+		field = keys[0]
+		if entry[field].File {
+			ref = "file:"
+		}
+	}
+	return fmt.Errorf("--env-from: %s has no field with an env name; use --env VAR='{{%s%s.%s}}' instead", name, ref, name, field)
 }
 
 // mergeEnv drops inherited variables that are overridden and appends the injected ones.
