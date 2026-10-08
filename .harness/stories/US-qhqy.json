@@ -3,16 +3,16 @@
   "id": "US-qhqy",
   "title": "agv run: inject, redact, runner",
   "lane": "high_risk",
-  "status": "planned",
+  "status": "implemented",
   "packet": "docs/stories/US-qhqy-agv-run-inject-redact-runner.md",
   "verify": "go vet ./... && go test -race ./internal/inject/... ./internal/redact/... ./internal/runner/... ./internal/cli/...",
   "last_verify": {
     "result": "pass",
     "exit_code": 0,
     "command": "go vet ./... && go test -race ./internal/inject/... ./internal/redact/... ./internal/runner/... ./internal/cli/...",
-    "commit": "f4daae0",
-    "at": "2026-10-08T10:40:30Z"
+    "commit": "9d55b3b",
+    "at": "2026-10-08T10:44:59Z"
   },
   "created_at": "2026-10-08T10:03:58Z",
-  "updated_at": "2026-10-08T10:40:30Z"
+  "updated_at": "2026-10-08T10:44:59Z"
 }
