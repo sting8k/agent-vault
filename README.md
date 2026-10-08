@@ -53,14 +53,20 @@ Write descriptions that help the agent choose: "GitHub PAT, read-only, org acme"
 
 ## Let your agent use it
 
-Install the built-in instructions as a skill:
+Add one line to your agent's **global** instructions (system prompt), so every project knows
+about agv, for example `~/.claude/CLAUDE.md` (Claude Code) or `~/.codex/AGENTS.md` (Codex):
+
+```text
+Secrets (API keys, passwords, SSH keys, cloud credentials): never ask me for values or read
+secret files; use the agv CLI and run "agv skills" before first use.
+```
+
+Optionally install the full instructions as a skill, so the agent does not need to run
+`agv skills` itself:
 
 ```sh
 mkdir -p ~/.claude/skills/agv && agv skills > ~/.claude/skills/agv/SKILL.md   # Claude Code
 ```
-
-For other agents, add one line to your project's `AGENTS.md`:
-`Secrets: use the agv CLI; run "agv skills" before first use.`
 
 The agent then runs `agv list` to see what exists (names and descriptions only) and `agv run` to
 use it:
