@@ -3,6 +3,7 @@ package vault
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,14 +113,19 @@ func (v *Vault) readVault() (*file, error) {
 	return f, nil
 }
 
+// master.key holds the key as hex text plus a newline, so it can be copied into a password
+// manager and pasted back. Surrounding whitespace is ignored on read (editors add newlines).
+func encodeKey(key []byte) []byte { return []byte(hex.EncodeToString(key) + "\n") }
+
 func (v *Vault) readKey() ([]byte, error) {
 	p := v.path(keyFile)
-	key, err := os.ReadFile(p)
+	text, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", p, err)
 	}
-	if len(key) != keySize {
-		return nil, fmt.Errorf("%s must be %d bytes, found %d; restore the key", p, keySize, len(key))
+	key, err := hex.DecodeString(string(bytes.TrimSpace(text)))
+	if err != nil || len(key) != keySize {
+		return nil, fmt.Errorf("%s must hold %d hex characters; restore the key", p, 2*keySize)
 	}
 	return key, nil
 }
@@ -135,7 +141,7 @@ func (v *Vault) createKey() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot create %s: %w", p, err)
 	}
-	if _, err = f.Write(key); err == nil {
+	if _, err = f.Write(encodeKey(key)); err == nil {
 		err = f.Sync()
 	}
 	if cerr := f.Close(); err == nil {

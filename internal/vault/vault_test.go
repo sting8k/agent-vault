@@ -153,7 +153,7 @@ func TestKeyVaultStateTable(t *testing.T) {
 		if err := os.MkdirAll(v.dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(v.path(keyFile), key, 0o600); err != nil {
+		if err := os.WriteFile(v.path(keyFile), key, 0o600); err != nil { // key is file content
 			t.Fatal(err)
 		}
 	}
@@ -193,9 +193,9 @@ func TestKeyVaultStateTable(t *testing.T) {
 			t.Fatal("reading or removing created the vault directory")
 		}
 		setValue(t, v, "E", "x")
-		key := readFile(t, v, keyFile)
-		if len(key) != keySize {
-			t.Fatalf("master.key has %d bytes", len(key))
+		key, err := v.readKey()
+		if err != nil || !bytes.Equal(readFile(t, v, keyFile), encodeKey(key)) {
+			t.Fatalf("master.key is not hex text: %v", err)
 		}
 		var f file
 		if err := json.Unmarshal(readFile(t, v, vaultFile), &f); err != nil || f.KeyID != keyID(key) {
@@ -205,12 +205,14 @@ func TestKeyVaultStateTable(t *testing.T) {
 
 	t.Run("present/missing: first writer creates the vault with the existing key", func(t *testing.T) {
 		v := newVault(t)
-		writeKey(t, v, otherKey)
+		// A key pasted back by hand, with stray whitespace, must still be accepted.
+		restored := append([]byte("  "), append(encodeKey(otherKey), '\n')...)
+		writeKey(t, v, restored)
 		if l, err := v.List(); err != nil || len(l) != 0 {
 			t.Fatalf("List = %v, %v", l, err)
 		}
 		setValue(t, v, "E", "x")
-		if !bytes.Equal(readFile(t, v, keyFile), otherKey) {
+		if !bytes.Equal(readFile(t, v, keyFile), restored) {
 			t.Fatal("the existing key was replaced")
 		}
 		var f file
@@ -230,14 +232,14 @@ func TestKeyVaultStateTable(t *testing.T) {
 	t.Run("present/present with another key_id: error", func(t *testing.T) {
 		v := newVault(t)
 		setValue(t, v, "E", "x")
-		writeKey(t, v, otherKey)
+		writeKey(t, v, encodeKey(otherKey))
 		failing(t, v, keyFile)
 	})
 
 	t.Run("invalid JSON is never overwritten, with or without a key", func(t *testing.T) {
 		for _, withKey := range []bool{true, false} {
 			v := newVault(t)
-			writeKey(t, v, otherKey)
+			writeKey(t, v, encodeKey(otherKey))
 			if !withKey {
 				os.Remove(v.path(keyFile))
 			}
@@ -246,16 +248,18 @@ func TestKeyVaultStateTable(t *testing.T) {
 		}
 	})
 
-	t.Run("a key of the wrong length is an error, not a new key", func(t *testing.T) {
-		v := newVault(t)
-		writeKey(t, v, []byte("short"))
-		snap := snapshot(t, v)
-		err := v.Set("E", Change{Description: "d", Type: "custom", Fields: []FieldChange{{Name: "v", Value: []byte("x")}}})
-		if err == nil || !strings.Contains(err.Error(), keyFile) {
-			t.Fatalf("Set = %v", err)
-		}
-		if snapshot(t, v) != snap {
-			t.Fatal("the key was touched")
+	t.Run("a malformed key is an error, not a new key", func(t *testing.T) {
+		for _, bad := range [][]byte{[]byte("short"), otherKey, append(encodeKey(otherKey)[:62], 'z', 'z')} {
+			v := newVault(t)
+			writeKey(t, v, bad)
+			snap := snapshot(t, v)
+			err := v.Set("E", Change{Description: "d", Type: "custom", Fields: []FieldChange{{Name: "v", Value: []byte("x")}}})
+			if err == nil || !strings.Contains(err.Error(), keyFile) {
+				t.Fatalf("Set with key %q = %v", bad, err)
+			}
+			if snapshot(t, v) != snap {
+				t.Fatal("the key was touched")
+			}
 		}
 	})
 }

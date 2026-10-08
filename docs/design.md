@@ -53,7 +53,7 @@ agents. `set` and help say so, so nobody puts a secret in a description.
 ```text
 ~/.agent-vault/          0700   (override with AGV_HOME)
   vault.json             0600   entries; field values encrypted
-  master.key             0600   32 random bytes
+  master.key             0600   32 random bytes as 64 hex characters + newline
   .lock                         flock target for writers
 ```
 
@@ -95,6 +95,8 @@ Key and vault states, checked on every command:
 | any | unreadable or invalid JSON | error naming the file; nothing is overwritten |
 
 Humans are told to back up `master.key` and `vault.json` together; a lost key cannot be recovered.
+The key is text so it can be pasted into a password manager and back; surrounding whitespace is
+ignored on read, anything else malformed is an error (never a new key).
 
 ## Injection (`agv run`)
 

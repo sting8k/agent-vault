@@ -75,7 +75,8 @@ agv run -- curl -H 'Authorization: Bearer {{GITHUB}}' https://api.github.com/use
 
 - **Storage:** `~/.agent-vault/` holds `vault.json` (values encrypted with AES-256-GCM) and
   `master.key`. Anyone who can read both can decrypt. **Back up both files together**: a lost
-  key cannot be recovered.
+  key cannot be recovered. The key is one line of hex text, so a password manager is a good place
+  for it (keep it apart from the vault backup).
 - **Output masking is best-effort.** agv masks the raw value and its base64, URL-encoded and
   JSON-escaped forms. A command that reverses, slices or otherwise rewrites a secret gets past it,
   and so does anything the command writes to files or sends over the network.
