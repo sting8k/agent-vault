@@ -74,6 +74,9 @@ func parseRun(args []string) (runArgs, error) {
 	var a runArgs
 	sep := slices.Index(args, "--")
 	if sep < 0 {
+		if slices.ContainsFunc(args, func(s string) bool { return s == "-h" || s == "-help" || s == "--help" }) {
+			return a, flag.ErrHelp
+		}
 		return a, errors.New("missing '--' before the command; usage: agv run [flags] -- CMD ARGS...")
 	}
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)

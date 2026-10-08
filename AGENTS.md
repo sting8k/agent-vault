@@ -1,6 +1,35 @@
 # Agent Instructions
 
-Add project-specific instructions above or below the harness block.
+Instructions for developing agv in this repo. How agents *use* agv lives in
+`internal/skill/SKILL.md` (`agv skills`), not here.
+
+## Project
+
+- `docs/design.md` is the contract: guarantees, storage, injection, lifecycle, redaction, layout.
+  Change it in the same commit when behaviour changes.
+- Go, standard library plus `golang.org/x/term`; no other dependencies without a decision.
+- Package roles and allowed imports are in design.md "Code layout". `inject` never imports `vault`;
+  `cli` owns all user-facing text and the vault→`inject.Source` adapter (`cli/run_source.go`).
+- Unix-only code goes in `_unix.go` files. Windows is not supported yet.
+
+## Commands
+
+```sh
+export PATH=$HOME/.local/go/bin:$PATH          # if go is not on PATH
+gofmt -l . && go vet ./... && go test -race ./...
+go build -o /tmp/agv ./cmd/agv
+AGV_HOME=$(mktemp -d) /tmp/agv ...             # manual runs; never touch the real ~/.agent-vault
+```
+
+## Rules
+
+- A secret value never reaches agv's own output, errors, logs or argv (guardrail G-7n9t). Build
+  messages from names and `NAME.field` labels only; do not echo user-supplied flag values or paths.
+- Tests use `AGV_HOME` temp dirs and fake values. Test invariants and real risks, not wording.
+  A bug fix comes with a test that fails on the old code.
+- Lifecycle code (signals, process groups, temp files) must stay correct on both Linux and macOS;
+  CI runs both.
+- Work on branch `dev-local`. Never push or tag without the user's explicit approval.
 
 <!-- HARNESS:BEGIN -->
 ## Harness

@@ -51,6 +51,10 @@ func TestRunRefusesWithoutSeparator(t *testing.T) {
 	if code != 125 || out != "" || !strings.HasPrefix(errs, "agv: ") {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}
+	// Help needs no separator.
+	if code, out, errs := runMain(t, "--help"); code != 0 || out == "" {
+		t.Fatalf("--help: code %d stdout %q stderr %q", code, out, errs)
+	}
 }
 
 // `agv run -- psql ... < file.sql` must work: the child reads agv's own stdin.
