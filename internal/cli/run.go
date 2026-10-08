@@ -13,9 +13,8 @@ import (
 	"github.com/sting8k/agent-vault/internal/runner"
 )
 
-// openSource opens the secret store a run reads from. The vault adapter
-// replaces it; tests set a fake.
-var openSource = func(io IO) (inject.Source, error) { return nil, errNotImplemented }
+// openSource opens the secret store a run reads from; tests set a fake.
+var openSource = openVaultSource
 
 const runUsage = `usage: agv run [flags] -- CMD ARGS...
 

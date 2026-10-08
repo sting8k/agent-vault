@@ -50,6 +50,7 @@ Variables agv sets exist only inside the command it starts. With `agv run --env 
 ## Shells, pipes, time limits
 
 - agv never runs a shell and refuses CMD = sh, bash, zsh, dash, fish, ksh, mksh, tcsh or csh: a shell can route secrets around redaction. Do pipes, `&&` and redirects in your own shell, around agv; they get redacted output. `--allow-shell` lifts the refusal; use it only if the user says so.
+- CMD reads agv's stdin: `agv run --env-from DB -- psql < schema.sql` works.
 - Use `set -o pipefail`, or the command after a pipe hides a failing agv: `set -o pipefail; agv run ... -- aws s3 ls | sort`.
 - `--timeout 30s` is off by default. On expiry: SIGTERM, SIGKILL about 2 s later, exit 124. Use it for anything that could hang. Temp files vanish when CMD exits, so detached commands (`docker run -d -v`, `ssh -f`) cannot use them.
 

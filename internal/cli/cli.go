@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 )
@@ -14,9 +13,6 @@ type IO struct {
 	Stderr io.Writer
 	Env    []string // os.Environ() form; read AGV_HOME etc. from here, never os.Getenv
 }
-
-// errNotImplemented marks a command whose scope is not built yet.
-var errNotImplemented = errors.New("not implemented")
 
 type command func(args []string, io IO) int
 
