@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "id": "US-qhqy",
+  "title": "agv run: inject, redact, runner",
+  "lane": "high_risk",
+  "status": "planned",
+  "packet": "docs/stories/US-qhqy-agv-run-inject-redact-runner.md",
+  "verify": "go vet ./... && go test -race ./internal/inject/... ./internal/redact/... ./internal/runner/... ./internal/cli/...",
+  "created_at": "2026-10-08T10:03:58Z",
+  "updated_at": "2026-10-08T10:03:58Z"
+}

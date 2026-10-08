@@ -226,7 +226,9 @@ internal/
 ```
 
 Dependencies point down only: `cli` → `inject`, `runner`, `preset`, `vault`, `skill`;
-`runner` → `redact`; `inject` → `vault`. `inject` resolves everything into one `Plan`; `runner`
+`runner` → `inject` (Plan type), `redact`. `inject` does not import `vault`: it reads entries through
+its `Source` interface, which `cli` implements on the vault. `inject` resolves everything into one
+`Plan`; `runner`
 alone owns signals and cleanup. `AGV_HOME` lets tests use a temp directory, never the real one.
 Standard library plus `golang.org/x/term`. Unix-only calls (flock, signals, process checks) sit in
 `_unix.go` files; nothing is written for Windows yet.
