@@ -6,6 +6,14 @@
   "status": "planned",
   "packet": "docs/stories/US-ewhv-vault-presets-and-set-list-rm-commands.md",
   "verify": "go vet ./... && go test -race ./internal/vault/... ./internal/preset/... ./internal/cli/...",
+  "last_verify": {
+    "result": "pass",
+    "exit_code": 0,
+    "command": "go vet ./... && go test -race ./internal/vault/... ./internal/preset/... ./internal/cli/...",
+    "commit": "26cff6c",
+    "dirty": true,
+    "at": "2026-10-08T10:31:58Z"
+  },
   "created_at": "2026-10-08T10:03:58Z",
-  "updated_at": "2026-10-08T10:03:58Z"
+  "updated_at": "2026-10-08T10:31:58Z"
 }
