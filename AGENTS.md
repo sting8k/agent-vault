@@ -14,8 +14,9 @@ Instructions for developing agv in this repo. How agents *use* agv lives in
 
 ## Commands
 
+Go 1.24+ (CI and releases build with the `toolchain` version in go.mod).
+
 ```sh
-export PATH=$HOME/.local/go/bin:$PATH          # if go is not on PATH
 gofmt -l . && go vet ./... && go test -race ./...
 go build -o /tmp/agv ./cmd/agv
 AGV_HOME=$(mktemp -d) /tmp/agv ...             # manual runs; never touch the real ~/.agent-vault
