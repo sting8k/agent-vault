@@ -280,6 +280,25 @@ func TestTempRootMustBeOurs(t *testing.T) {
 	}
 }
 
+// Without XDG_RUNTIME_DIR, which is the normal case on macOS, the root is under $TMPDIR. There it
+// ends in a slash and sits behind a symlink (/var -> /private/var).
+func TestTempRootUnderTMPDIR(t *testing.T) {
+	tmp := t.TempDir()
+	link := filepath.Join(t.TempDir(), "var")
+	if err := os.Symlink(tmp, link); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Build(Request{Argv: []string{"cmd", "{{file:KEY}}"}, Environ: []string{"TMPDIR=" + link + "/"}}, fakeSource{"KEY": one("pem")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Cleanup()
+	want := filepath.Join(tmp, "agv-"+strconv.Itoa(os.Getuid()), strconv.Itoa(os.Getpid()), "KEY.value")
+	if got, err := os.ReadFile(want); err != nil || string(got) != "pem" {
+		t.Fatalf("no temp file at %s: %q, %v (argv %q)", want, got, err, p.Argv)
+	}
+}
+
 func contains(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
