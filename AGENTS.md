@@ -39,17 +39,16 @@ tree is exactly `dev-local` HEAD; nothing is merged into it. Never commit on `ma
 port any change made on GitHub (for example a security fix) to `dev-local` first, or the next
 release overwrites it.
 
-First add a `## [X.Y.Z] - date` section to CHANGELOG.md, written for users: the release
-page shows that section, and the release fails without it.
+To release, add a `## [X.Y.Z] - date` section to CHANGELOG.md (written for users; the release
+page shows it), commit on `dev-local`, then:
 
 ```sh
-gofmt -l . && go vet ./... && go test -race ./...
-C=$(git commit-tree dev-local^{tree} -p main -m "Release vX.Y.Z")
-git branch -f main "$C"
-agv run --env GH_TOKEN='{{GITHUB}}' -- git push origin main     # wait for CI to pass
-git tag -a vX.Y.Z "$C" -m "agv vX.Y.Z"
-agv run --env GH_TOKEN='{{GITHUB}}' -- git push origin vX.Y.Z   # the release workflow builds it
+agv run --env GH_TOKEN='{{GITHUB}}' -- scripts/release.sh vX.Y.Z --dry-run   # checks + tests only
+agv run --env GH_TOKEN='{{GITHUB}}' -- scripts/release.sh vX.Y.Z             # needs the user's approval
 ```
+
+It snapshots `dev-local` onto `main`, waits for CI, tags, waits for the release workflow, and checks
+the published binary for this OS. It stops at the first failure; nothing is tagged before CI passes.
 
 <!-- HARNESS:BEGIN -->
 ## Harness
