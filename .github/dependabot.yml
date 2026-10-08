@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions # keeps the pinned action SHAs current
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly

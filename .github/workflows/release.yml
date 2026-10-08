@@ -22,6 +22,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Test # a tag never ships code whose tests fail
+        run: go vet ./... && go test -race ./...
       - name: Build
         env:
           CGO_ENABLED: "0"
