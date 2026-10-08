@@ -100,6 +100,14 @@ func runSet(argv []string, sys IO) error {
 			cur = &all[i]
 		}
 	}
+	if cur != nil {
+		// Changing a stored entry can lose its only copy, so it needs the person at a terminal
+		// and always asks before saving. Without a terminal (an agent), set only adds entries.
+		if s.t == nil {
+			return fmt.Errorf("%s already exists; changing it needs your confirmation: run 'agv set %s' in your own terminal", name, name)
+		}
+		s.prompted = true
+	}
 	d := &draft{name: name, cur: cur, unset: unset}
 	if d.typ, err = s.entryType(typeOpt, hasType, cur); err != nil {
 		return err

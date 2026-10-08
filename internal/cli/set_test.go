@@ -294,17 +294,17 @@ func TestSetPatchesAnExistingEntry(t *testing.T) {
 	}
 
 	// Only --unset removes a field, and it leaves the rest alone.
-	if r := agv(t, home, nil, "set", "AWS_PROD", "--field", "session_token="+f("tok-tok-tok")); r.code != 0 {
+	if r := agv(t, home, person(), "set", "AWS_PROD", "--field", "session_token="+f("tok-tok-tok")); r.code != 0 {
 		t.Fatal(r.err)
 	}
-	if r := agv(t, home, nil, "set", "AWS_PROD", "--unset", "session_token"); r.code != 0 {
+	if r := agv(t, home, person(), "set", "AWS_PROD", "--unset", "session_token"); r.code != 0 {
 		t.Fatal(r.err)
 	}
 	got = mustFields(t, home, "AWS_PROD")
 	if _, ok := got["session_token"]; ok || len(got) != 3 {
 		t.Errorf("--unset removed the wrong fields: %d left", len(got))
 	}
-	if r := agv(t, home, nil, "set", "AWS_PROD", "--unset", "nothing"); r.code == 0 {
+	if r := agv(t, home, person(), "set", "AWS_PROD", "--unset", "nothing"); r.code == 0 {
 		t.Error("unsetting a field that does not exist succeeded")
 	}
 }
@@ -321,8 +321,8 @@ func TestSetChangingTheTypeKeepsMatchingFieldsAndRemovesNone(t *testing.T) {
 	if k := mustFields(t, home, "SVC")["key"]; k.File || k.Env != "" {
 		t.Fatal("a custom --field should carry no env name or file flag")
 	}
-	// Nothing is missing for gcp-sa (key is stored), so this needs no terminal.
-	if r := agv(t, home, nil, "set", "SVC", "--type", "gcp-sa"); r.code != 0 {
+	// Nothing is missing for gcp-sa (key is stored), so nothing is asked but the confirmation.
+	if r := agv(t, home, person(), "set", "SVC", "--type", "gcp-sa"); r.code != 0 {
 		t.Fatalf("exit %d: %s", r.code, r.err)
 	}
 	got := mustFields(t, home, "SVC")
@@ -338,6 +338,30 @@ func TestSetChangingTheTypeKeepsMatchingFieldsAndRemovesNone(t *testing.T) {
 	// A required field of the new type that is not stored must be given.
 	if r := agv(t, home, nil, "set", "SVC", "--type", "basic"); r.code == 0 || !strings.Contains(r.err, "terminal") {
 		t.Errorf("changing to a type with unfilled required fields: exit %d\n%s", r.code, r.err)
+	}
+}
+
+// An agent has no terminal. It may add entries, but must never overwrite or remove one:
+// that would lose the only copy of a secret.
+func TestWithoutTerminalExistingEntriesAreNeverChanged(t *testing.T) {
+	home := newHome(t)
+	seed(t, home, "KEEP", "api-token", "d", "value")
+	for _, args := range [][]string{
+		{"set", "KEEP", "--field", "value=-"},
+		{"set", "KEEP", "--desc", "changed"},
+		{"set", "KEEP", "--type", "custom"},
+		{"set", "KEEP", "--unset", "value"},
+		{"rm", "KEEP"},
+		{"rm", "KEEP", "--yes"},
+	} {
+		r := agv(t, home, strings.NewReader("y\nreplacement-value\n"), args...)
+		if r.code == 0 || strings.Contains(r.err, "--yes") {
+			t.Errorf("%v: exit %d, or the error teaches a way around the terminal:\n%s", args, r.code, r.err)
+		}
+	}
+	e, _ := openVault(t, home).Entry("KEEP")
+	if e.Description != "d" || e.Type != "api-token" || string(mustFields(t, home, "KEEP")["value"].Value) != sentinel+"-value" {
+		t.Error("an existing entry was changed without a terminal")
 	}
 }
 

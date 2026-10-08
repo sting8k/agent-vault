@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-const rmUsage = `usage: agv rm NAME [--yes]
+const rmUsage = `usage: agv rm NAME
 
-Removes a secret. Run it in your own terminal: it asks y/N first, unless --yes is given.
+Removes a secret. Run it in your own terminal: it always asks y/N first.
 `
 
 func cmdRm(argv []string, sys IO) int {
-	a, err := parseArgs(argv, []string{"yes", "help"}, nil)
+	a, err := parseArgs(argv, []string{"help"}, nil)
 	if err != nil {
 		return fail(sys, fmt.Errorf("rm: %w (see 'agv rm --help')", err))
 	}
@@ -33,19 +33,17 @@ func cmdRm(argv []string, sys IO) int {
 	if err != nil {
 		return fail(sys, err)
 	}
-	if !a.flags["yes"] {
-		t := terminalOf(sys.Stdin, sys.Stderr)
-		if t == nil {
-			return fail(sys, errors.New("rm asks for confirmation and needs a terminal; to remove without asking run: agv rm NAME --yes"))
-		}
-		prompt := fmt.Sprintf("Remove %s (%s) with %d field(s)? [y/N] ", stripControl(e.Name), stripControl(e.Description), len(e.Fields))
-		ok, err := yesNo(t, prompt, false)
-		if err != nil {
-			return fail(sys, err)
-		}
-		if !ok {
-			return fail(sys, errCancelled)
-		}
+	t := terminalOf(sys.Stdin, sys.Stderr)
+	if t == nil {
+		return fail(sys, errors.New("rm needs your confirmation: run it in your own terminal"))
+	}
+	prompt := fmt.Sprintf("Remove %s (%s) with %d field(s)? [y/N] ", stripControl(e.Name), stripControl(e.Description), len(e.Fields))
+	ok, err := yesNo(t, prompt, false)
+	if err != nil {
+		return fail(sys, err)
+	}
+	if !ok {
+		return fail(sys, errCancelled)
 	}
 	if err := v.Remove(name); err != nil {
 		return fail(sys, err)

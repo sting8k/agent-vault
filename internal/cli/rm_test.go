@@ -22,11 +22,6 @@ func TestRmNeverRemovesWithoutAnExplicitYes(t *testing.T) {
 	home := newHome(t)
 	seed(t, home, "KEEP_ME", "api-token", "d", "value")
 
-	// No terminal and no --yes: refuse at once instead of guessing.
-	r := agv(t, home, strings.NewReader("y\n"), "rm", "KEEP_ME")
-	if r.code == 0 || !strings.Contains(r.err, "--yes") {
-		t.Errorf("exit %d: %s", r.code, r.err)
-	}
 	// At a terminal, anything but y is no: Enter, n, or no answer at all.
 	for _, answer := range []string{"", "n", "maybe"} {
 		if r := agv(t, home, person("Remove", answer), "rm", "KEEP_ME"); r.code == 0 {
@@ -44,7 +39,7 @@ func TestRmRemovesOnlyTheNamedEntry(t *testing.T) {
 	seed(t, home, "TWO", "api-token", "d", "value")
 	seed(t, home, "THREE", "api-token", "d", "value")
 
-	if r := agv(t, home, nil, "rm", "ONE", "--yes"); r.code != 0 {
+	if r := agv(t, home, person("Remove", "yes"), "rm", "ONE"); r.code != 0 {
 		t.Fatal(r.err)
 	}
 	if r := agv(t, home, person("Remove", "y"), "rm", "TWO"); r.code != 0 {
@@ -57,7 +52,7 @@ func TestRmRemovesOnlyTheNamedEntry(t *testing.T) {
 		t.Error("a remaining entry changed")
 	}
 
-	r := agv(t, home, nil, "rm", "THEE", "--yes")
+	r := agv(t, home, person("Remove", "y"), "rm", "THEE")
 	if r.code == 0 || !strings.Contains(r.err, "THREE") {
 		t.Errorf("an unknown name should fail and suggest THREE: exit %d: %s", r.code, r.err)
 	}

@@ -24,6 +24,10 @@ All user-facing text (prompts, errors, help, skill) is English.
 
 There is no command that prints a secret value.
 
+Without a terminal (how agents run commands), `set` may only add a new entry. Changing or removing
+an existing entry needs the person at a terminal and a confirmation, because the vault holds the
+only copy of a value. Error messages never suggest a way around this.
+
 ## Agent flow
 
 ```text
@@ -198,9 +202,9 @@ and network traffic of the child.
   rest.
 - Warnings: value shorter than 6 bytes (redaction false positives), trailing whitespace or newline
   (kept as typed, never trimmed).
-- Non-interactive: `agv set NAME --type T --desc D --field f=@path --field g=-` (`-` = stdin, at
+- Non-interactive (new entries only): `agv set NAME --type T --desc D --field f=@path --field g=-` (`-` = stdin, at
   most one field). Values are never accepted inline in argv.
-- `agv rm NAME` asks y/N unless `--yes`.
+- `agv rm NAME` always asks y/N at a terminal; there is no `--yes`.
 
 Presets (v1), env names filled in at `set`:
 

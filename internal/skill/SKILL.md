@@ -23,7 +23,7 @@ No agv command prints a secret value. You name a secret; agv injects it into one
 
 2. `agv run [flags] -- CMD ARGS...` runs CMD with them. Always write the `--`.
 
-`list`, `run` and `skills` never prompt. `set` and `rm` are for the user: do not run them.
+`list`, `run` and `skills` never prompt. `set` and `rm` are for the user: do not run them. Without a terminal agv refuses to change or remove a stored secret.
 
 ## Injecting (prefer env and file; args show in `ps`)
 
