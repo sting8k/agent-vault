@@ -119,7 +119,8 @@ Env:
 - `--env VAR=TEMPLATE` sets `VAR` to the template after substitution, for example
   `--env PGPASSWORD='{{DB.password}}'` or `--env GIT_SSH_COMMAND='ssh -i {{file:DEPLOY_KEY}}'`.
 - `--env-from NAME` sets every field of NAME that has an env name; a field with `file: true` gets
-  its temp-file path, others their value.
+  its temp-file path, others their value. If NAME has no field with an env name it is an error that
+  points to `--env VAR='{{NAME.field}}'`.
 - Injected vars override inherited ones. Two flags setting the same var is an error. Other inherited
   vars, including other cloud credentials, are left alone.
 
@@ -151,7 +152,8 @@ files already written are removed and nothing runs.
   agv never signals its own process group.
 - SIGTERM and SIGHUP received by agv are forwarded to the child. SIGINT is not forwarded: a
   terminal Ctrl-C already reaches the whole foreground group.
-- `--timeout` is opt-in, no default. On expiry: SIGTERM to the child, ~2 s grace, SIGKILL, then a
+- The child inherits agv's stdin (`agv run -- psql ... < file.sql` works).
+- `--timeout` is opt-in, no default; it takes a Go duration (`30s`, `2m`). On expiry: SIGTERM to the child, ~2 s grace, SIGKILL, then a
   bounded wait for output. Grandchildren are not guaranteed to be killed.
 - `cmd.WaitDelay` is set so a grandchild holding the pipes cannot hang agv.
 - If the reader of agv's stdout goes away (`| head`), agv stops writing, waits for the child and
