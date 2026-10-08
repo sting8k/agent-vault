@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "G-vxjb",
+  "rule": "Develop on branch dev-local; never push any branch without the user's explicit approval of what is pushed",
+  "why": "User decides later what goes to main and the remote",
+  "status": "superseded",
+  "created_at": "2026-10-08T09:47:38Z",
+  "updated_at": "2026-10-08T12:51:49Z"
+}

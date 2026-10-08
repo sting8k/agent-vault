@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "G-jnjz",
+  "rule": "Develop on dev-local (local only); main gets one snapshot commit per release (tree = dev-local HEAD, see AGENTS.md Releases); never push or tag without the user's explicit approval",
+  "why": "User wants main to hold releases only, without development history",
+  "status": "active",
+  "created_at": "2026-10-08T12:51:49Z",
+  "updated_at": "2026-10-08T12:51:49Z"
+}
