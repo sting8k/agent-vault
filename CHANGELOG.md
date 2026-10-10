@@ -20,6 +20,8 @@ All notable changes to agv. Each release on GitHub shows the section for its tag
 
 - A failing audit log or webhook is a warning on stderr; the command still runs and keeps its exit
   code.
+- Built with Go 1.27.2, which fixes security issues in `net/http` and `crypto/tls` that the new
+  webhook sending would otherwise reach.
 
 ## [0.1.1] - 2026-10-08
 
