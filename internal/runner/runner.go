@@ -41,6 +41,10 @@ type Options struct {
 	Stdout, Stderr io.Writer
 	Timeout        time.Duration // 0: no timeout
 	AllowShell     bool
+	// Finished, if set, is called with the exit code Run is about to return, on every path after
+	// Run is entered. The child is gone and the temp files are removed, but agv still holds its
+	// signal handlers, so SIGINT/SIGTERM/SIGHUP cannot kill agv while it runs. Keep it short.
+	Finished func(code int)
 }
 
 var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "fish": true, "ksh": true, "mksh": true, "tcsh": true, "csh": true}
@@ -56,6 +60,11 @@ func Run(plan *inject.Plan, opts Options) (code int, err error) {
 	sigs := make(chan os.Signal, 16)
 	notify(sigs)
 	defer signal.Stop(sigs)
+	defer func() {
+		if opts.Finished != nil {
+			opts.Finished(code)
+		}
+	}()
 	defer func() {
 		if plan.Cleanup == nil {
 			return

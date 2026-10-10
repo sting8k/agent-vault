@@ -62,6 +62,9 @@ agents. `set` and help say so, so nobody puts a secret in a description.
   vault.json             0600   entries; field values encrypted
   master.key             0600   32 random bytes as 64 hex characters + newline
   .lock                         flock target for writers
+  config.json            0600   audit log and webhook settings; written by hand, optional
+  audit.log              0600   one JSON line per run, set and rm
+  audit.lock                    flock target for audit.log writers
 ```
 
 ```json
@@ -229,6 +232,82 @@ Presets (v1), env names filled in at `set`:
 | `ssh-key` | `key` file |
 | `custom` | user-defined |
 
+## Audit log and webhooks
+
+Settings live in `$AGV_HOME/config.json`, edited by hand: there is no command for it and no
+environment variable overrides it. A missing file means the defaults. A file that cannot be read,
+parsed or validated (unknown keys, an unknown `format` or action, a bad duration, a literal URL
+that is not http(s)) is an error that names the file; `run`, `set` and `rm` then fail with 125
+before doing anything. `list` and `skills` do not read it.
+
+```json
+{
+  "audit": { "enabled": true, "retention": "7d" },
+  "webhooks": [
+    { "url": "{{NTFY_TOPIC}}", "format": "ntfy", "actions": ["run", "rm"], "secrets": ["AWS_PROD"] }
+  ]
+}
+```
+
+- `audit.enabled` (default `true`) turns the log off; webhooks do not depend on it.
+  `audit.retention` is `Nd` (whole days) or a Go duration such as `36h`; default `7d`.
+- A webhook has `url` (required), `format` (`json`, the default, or `ntfy`), `actions` (any of
+  `run`, `set`, `rm`) and `secrets` (`NAME` or `NAME.field`). An empty or missing filter matches
+  everything; both filters must match. `NAME` matches every field of NAME, `NAME.field` only that one.
+
+### Audit log
+
+`audit.log` is one file, 0600, never rotated into copies. A record is one JSON line:
+
+```json
+{"time":"2026-10-10T13:45:37.554Z","action":"run","secrets":["AWS_PROD.region"],"program":"aws","cwd":"/home/me/proj","exit":0,"duration_ms":1234}
+```
+
+`secrets` holds `NAME.field` labels for `run` and `NAME` for `set` and `rm`. `program` is argv[0]
+only (`run` only). A record has no field for a value, an argument or the environment, so none can
+reach the log or a webhook body. `time` is when the action finished.
+
+- Logged: `run`, `set`, `rm`; not `list` or `skills`. A `run` is logged once its references are
+  resolved, whatever happens next: exit codes 124 to 127 and 128+N are recorded like any other,
+  and so is a refused shell (125). A run that fails earlier (bad flags, unknown secret) read
+  nothing and is not logged. `set` and `rm` are logged when the vault was changed; a refused or
+  cancelled one changed nothing and is not.
+- When: `run` writes its record from `runner.Options.Finished`, after the child has exited and the
+  temp files are removed but before agv releases its signal handlers. A timeout, or a SIGTERM,
+  SIGHUP or SIGINT that ends the child, is therefore logged; SIGKILL of agv cannot be.
+- Concurrency: writers take an exclusive flock on `audit.lock` (not the vault's `.lock`, so a big
+  rewrite never makes `agv set` wait). Under it a writer prunes and then appends.
+- Pruning: lines are appended in time order, so a writer reads only the first line. Once it is
+  older than the retention, the writer rewrites the file without every expired line, through a
+  temp file and a rename, so a reader sees the old file or the new one. A line with no readable
+  time is kept. The rewrite costs time proportional to the file (about 13 ms for 7,000 lines, 1.4
+  MB); between rewrites an append is O(1). After a rewrite `tail -f` keeps following the replaced
+  file; use `tail -F`. A torn last line (crash or full disk in the middle of a write) is not repaired.
+- If the log cannot be written agv prints `agv: audit log: ...` on stderr and the command carries
+  on with its own exit code.
+
+### Webhooks
+
+A finished action that matches a webhook is sent once, at the end. All matching webhooks go out at
+the same time and share one 3 second limit. A failure is a warning, `agv: webhook #N: ...` (N counts
+the config list from 1), and never changes the exit code or fails the command. The warning is a
+fixed reason (timed out, could not connect, HTTP status, unknown secret, bad URL): it never
+contains the URL, a transport error or text from the server, because the URL may be a secret.
+Redirects are not followed.
+
+- `url` is a template: `{{NAME}}` and `{{NAME.field}}` are filled in from the vault when the
+  webhook is sent, anywhere in the string (`https://ntfy.sh/{{NTFY_TOPIC}}`); `{{file:...}}` is an
+  error. Keep ntfy topics and Slack or Discord URLs in the vault: a URL written literally sits in
+  config.json in plain text. A missing secret or field is reported like any webhook failure,
+  with the name only.
+- `json` posts the audit record as `application/json`. Slack (needs `text`) and Discord (needs
+  `content`) answer HTTP 400 to it; use `json` for receivers that take arbitrary JSON.
+- `ntfy` posts a short plain-text body (secret names, exit code, duration, directory) with `Title`,
+  `Priority` (`default`; `high` when the exit code is not 0) and `Tags` headers. Headers are
+  printable ASCII.
+- For `run`, webhooks are sent after `runner.Run` has returned, so Ctrl-C can cut them short; the
+  audit line is already written by then.
+
 ## Code layout
 
 ```text
@@ -237,15 +316,17 @@ internal/
   cli/     command dispatch, prompts, all user-facing text
   vault/   entries, validation, encryption, key/vault states, locking, atomic save
   preset/  built-in preset table
-  inject/  placeholders and env -> Plan{Argv, Env, Patterns, Cleanup}
+  inject/  placeholders and env -> Plan{Argv, Env, Patterns, Cleanup}; Expand for text agv itself uses
   runner/  start the child, signals, timeout, pipe output through redact, exit codes, temp cleanup
+  audit/   config.json, audit.log (append, prune, flock), webhook delivery
   redact/  streaming multi-pattern redactor
   skill/   embedded SKILL.md (go:embed)
 ```
 
-Dependencies point down only: `cli` → `inject`, `runner`, `preset`, `vault`, `skill`;
+Dependencies point down only: `cli` → `inject`, `runner`, `preset`, `vault`, `audit`, `skill`;
 `runner` → `inject` (Plan type), `redact`. `inject` does not import `vault`: it reads entries through
-its `Source` interface, which `cli` implements on the vault. `inject` resolves everything into one
+its `Source` interface, which `cli` implements on the vault. `audit` imports no other agv package:
+`cli` hands it the directory and a function that fills in a webhook URL template. `inject` resolves everything into one
 `Plan`; `runner`
 alone owns signals and cleanup. `AGV_HOME` lets tests use a temp directory, never the real one.
 Standard library plus `golang.org/x/term`. Unix-only calls (flock, signals, process checks) sit in
@@ -254,5 +335,5 @@ Standard library plus `golang.org/x/term`. Unix-only calls (flock, signals, proc
 ## Not in v1
 
 Windows, OS keychain, user-defined presets, a separate `edit` command, testing a credential,
-non-secret (visible) fields, audit log, hex encodings, detecting shell wrappers or interpreters,
+non-secret (visible) fields, hex encodings, detecting shell wrappers or interpreters,
 supervising detached processes.

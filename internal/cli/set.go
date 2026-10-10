@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/sting8k/agent-vault/internal/audit"
 	"github.com/sting8k/agent-vault/internal/preset"
 	"github.com/sting8k/agent-vault/internal/vault"
 )
@@ -76,6 +77,10 @@ func runSet(argv []string, sys IO) error {
 	}
 	unset := a.vals["unset"]
 
+	tr, err := openTrail(sys)
+	if err != nil {
+		return err
+	}
 	v, err := vaultOf(sys)
 	if err != nil {
 		return err
@@ -130,6 +135,7 @@ func runSet(argv []string, sys IO) error {
 		return err
 	}
 	d.report(sys.Stdout, len(all) == 0)
+	tr.done(audit.ActionSet, name)
 	return nil
 }
 

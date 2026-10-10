@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sting8k/agent-vault/internal/audit"
 	"github.com/sting8k/agent-vault/internal/inject"
 	"github.com/sting8k/agent-vault/internal/runner"
 )
@@ -37,6 +38,10 @@ func cmdRun(args []string, io IO) int {
 	if err != nil {
 		return fail(io, err)
 	}
+	tr, err := openTrail(io)
+	if err != nil {
+		return fail(io, err)
+	}
 	src, err := openSource(io)
 	if err != nil {
 		return fail(io, err)
@@ -45,13 +50,27 @@ func cmdRun(args []string, io IO) int {
 	if err != nil {
 		return fail(io, err)
 	}
+	// The audit line is written from Finished, while runner still holds the signal handlers, so a
+	// signal or timeout that ends the child is logged too. Webhooks wait until Run has returned:
+	// Ctrl-C may cut them short, and they never change the exit code.
+	var rec audit.Record
+	tr.start = time.Now()
 	code, err := runner.Run(plan, runner.Options{
 		Stdin: io.Stdin, Stdout: io.Stdout, Stderr: io.Stderr,
 		Timeout: a.timeout, AllowShell: a.allowShell,
+		Finished: func(code int) {
+			labels := make([]string, len(plan.Secrets))
+			for i, s := range plan.Secrets {
+				labels[i] = s.Label
+			}
+			rec = tr.record(audit.ActionRun, labels, plan.Argv[0], code)
+			tr.log(rec)
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "agv: %v\n", err)
 	}
+	tr.notify(rec)
 	return code
 }
 

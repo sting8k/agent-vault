@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/sting8k/agent-vault/internal/audit"
 )
 
 const rmUsage = `usage: agv rm NAME
@@ -25,6 +27,10 @@ func cmdRm(argv []string, sys IO) int {
 		return fail(sys, errors.New("rm takes exactly one NAME"))
 	}
 	name := a.pos[0]
+	tr, err := openTrail(sys)
+	if err != nil {
+		return fail(sys, err)
+	}
 	v, err := vaultOf(sys)
 	if err != nil {
 		return fail(sys, err)
@@ -49,6 +55,7 @@ func cmdRm(argv []string, sys IO) int {
 		return fail(sys, err)
 	}
 	fmt.Fprintf(sys.Stdout, "Removed %s.\n", name)
+	tr.done(audit.ActionRm, name)
 	return 0
 }
 

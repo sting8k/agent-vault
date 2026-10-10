@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "id": "US-qj5v",
+  "title": "Audit log (7d retention, one file) and webhook notify (ntfy, json) configured by config.json",
+  "lane": "high_risk",
+  "status": "implemented",
+  "packet": "docs/stories/US-qj5v-audit-log-7d-retention-one-file-and-webh.md",
+  "contract": "docs/design.md",
+  "verify": "export PATH=$HOME/.local/go/bin:$PATH && test -z \"$(gofmt -l .)\" && go vet ./... && go test -race ./...",
+  "last_verify": {
+    "result": "pass",
+    "exit_code": 0,
+    "command": "export PATH=$HOME/.local/go/bin:$PATH && test -z \"$(gofmt -l .)\" && go vet ./... && go test -race ./...",
+    "commit": "e16c7a1",
+    "at": "2026-10-10T13:52:44Z"
+  },
+  "created_at": "2026-10-10T13:23:09Z",
+  "updated_at": "2026-10-10T13:52:44Z"
+}

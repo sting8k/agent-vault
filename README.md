@@ -81,6 +81,33 @@ agv run --env GIT_SSH_COMMAND='ssh -i {{file:DEPLOY_KEY}}' -- git pull   # as a 
 agv run -- curl -H 'Authorization: Bearer {{GITHUB}}' https://api.github.com/user
 ```
 
+## Audit log and notifications
+
+agv appends one line per `run`, `set` and `rm` to `~/.agent-vault/audit.log`: time, secret names,
+the program (never its arguments), directory, exit code and duration. It never holds a value. It
+is one file; lines older than 7 days are dropped.
+
+To change that, or to be notified when an agent uses a secret, write `~/.agent-vault/config.json`
+by hand (`chmod 600`):
+
+```json
+{
+  "audit": { "enabled": true, "retention": "7d" },
+  "webhooks": [
+    { "url": "{{NTFY_TOPIC}}", "format": "ntfy", "actions": ["run", "rm"], "secrets": ["AWS_PROD"] }
+  ]
+}
+```
+
+- `retention` is days (`14d`) or hours (`36h`). `"enabled": false` stops the log.
+- `format` is `ntfy` (a readable message for the ntfy app) or `json` (the log line, for your own
+  receiver; Slack and Discord reject it). `actions` and `secrets` narrow what is sent; leave them
+  out to get everything. `"secrets": ["AWS_PROD"]` covers all fields of AWS_PROD.
+- A topic or webhook URL is a secret too: store it with `agv set NTFY_TOPIC` (type `api-token`,
+  value `https://ntfy.sh/<your-topic>`) and write `{{NTFY_TOPIC}}` as the `url`. agv never prints it.
+- A log or webhook that fails is a warning on stderr; the command still runs and keeps its exit
+  code. A `config.json` agv cannot read is an error until you fix it.
+
 ## Limits
 
 - **Storage:** `~/.agent-vault/` holds `vault.json` (values encrypted with AES-256-GCM) and
@@ -96,6 +123,8 @@ agv run -- curl -H 'Authorization: Bearer {{GITHUB}}' https://api.github.com/use
   a secret around masking. `--allow-shell` overrides this.
 - **Temp files** for `{{file:…}}` live under `$XDG_RUNTIME_DIR/agv` or `$TMPDIR` and are deleted
   when the command exits. If agv is killed with SIGKILL, the next agv run cleans them up.
+- **The audit log is a record, not a lock:** anyone who can write `~/.agent-vault/` can edit it.
+  A run killed with SIGKILL is not logged.
 - **Platforms:** Linux and macOS. Windows is planned.
 
 ## More

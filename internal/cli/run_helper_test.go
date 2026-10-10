@@ -106,7 +106,8 @@ func selfCmd(role string, args ...string) []string {
 }
 
 func helperEnv(t *testing.T) []string {
-	return append(os.Environ(), "AGV_RUNTEST_HELPER=1", "XDG_RUNTIME_DIR="+t.TempDir(),
+	// Every run writes audit.log into AGV_HOME: never the real vault directory.
+	return append(os.Environ(), "AGV_RUNTEST_HELPER=1", "XDG_RUNTIME_DIR="+t.TempDir(), "AGV_HOME="+t.TempDir(),
 		"GORACE=atexit_sleep_ms=0") // the race runtime otherwise delays every exit by 1 s
 }
 
@@ -137,6 +138,7 @@ type agvProcess struct {
 	pipe   io.ReadCloser // read end of agv's stdout
 	stdout *bufio.Reader
 	stderr *syncBuf
+	home   string // its AGV_HOME
 }
 
 func startAgv(t *testing.T, args ...string) *agvProcess {
@@ -148,7 +150,7 @@ func startAgv(t *testing.T, args ...string) *agvProcess {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &agvProcess{cmd: cmd, pipe: out, stdout: bufio.NewReader(out), stderr: &syncBuf{}}
+	p := &agvProcess{cmd: cmd, pipe: out, stdout: bufio.NewReader(out), stderr: &syncBuf{}, home: envOf(cmd.Env, "AGV_HOME")}
 	cmd.Stderr = p.stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

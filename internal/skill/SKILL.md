@@ -62,6 +62,10 @@ Secrets in CMD's stdout and stderr (also their base64, URL-encoded and JSON-esca
 
 If agv reports an unknown secret, compare the name with `agv list`; agv suggests close names. If it is not stored, ask the user to run `agv set NAME` in a separate terminal. Never ask for the value, and never read `~/.agent-vault/`.
 
+## Audit log
+
+agv records each `run`, `set` and `rm` (secret names and the program, not its arguments or any value) in the user's audit log, and may notify the user. A stderr line starting `agv: audit log:` or `agv: webhook` is a problem with the user's setup: your command still ran. Mention it to the user; do not open or edit `~/.agent-vault/config.json`.
+
 ## Exit codes
 
 CMD's exit code, except 124 timeout, 125 agv error, 126 not executable, 127 not found, 128+N killed by signal N. CMD can return those too: agv's own failures print a line starting `agv: ` on stderr.

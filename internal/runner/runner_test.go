@@ -115,6 +115,21 @@ func TestEmptyPlanEnvIsNotInherited(t *testing.T) {
 	}
 }
 
+// Finished is where agv writes the audit line. It runs after the temp files are gone, sees the
+// code Run returns, and runs while agv still catches signals. If Run had released them first, the
+// SIGTERM below would kill the test binary.
+func TestFinishedRunsAfterCleanupAndShieldedFromSignals(t *testing.T) {
+	cleaned, cleanedAtFinish, finishedCode := 0, -1, -1
+	code, err := Run(plan("print", nil, &cleaned), Options{Stdout: &recorder{}, Stderr: &recorder{}, Finished: func(code int) {
+		cleanedAtFinish, finishedCode = cleaned, code
+		syscall.Kill(os.Getpid(), syscall.SIGTERM)
+		time.Sleep(100 * time.Millisecond) // time for the signal to arrive
+	}})
+	if err != nil || code != 7 || finishedCode != 7 || cleanedAtFinish != 1 {
+		t.Fatalf("code=%d err=%v; Finished saw code %d after %d cleanups", code, err, finishedCode, cleanedAtFinish)
+	}
+}
+
 func TestExitCodes(t *testing.T) {
 	missing := &inject.Plan{Argv: []string{"agv-no-such-command-xyz"}}
 	notExec := t.TempDir() + "/script"
