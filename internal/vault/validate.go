@@ -9,16 +9,17 @@ import (
 )
 
 var (
-	nameRE  = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	nameRE  = regexp.MustCompile(`^[A-Z][A-Z0-9_]*(/[A-Z][A-Z0-9_]*)*$`)
 	fieldRE = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	envRE   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	typeRE  = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 )
 
-// CheckName reports whether s is a valid entry name.
+// CheckName reports whether s is a valid entry name: one or more parts joined by "/", such as
+// SHOP/PROD/DB. The "/" only groups names for people and agents; the whole string is the name.
 func CheckName(s string) error {
 	if !nameRE.MatchString(s) {
-		return errors.New("a name must start with A-Z and use only A-Z, 0-9 and _")
+		return errors.New("a name is one or more parts joined by /, each starting with A-Z and using only A-Z, 0-9 and _ (for example SHOP/PROD/DB)")
 	}
 	return nil
 }

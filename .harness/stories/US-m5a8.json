@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "id": "US-m5a8",
+  "title": "Secret groups: NAME/... paths, grouped list, typo suggestions, agent naming guide, webhook prefix filters",
+  "lane": "high_risk",
+  "status": "implemented",
+  "packet": "docs/stories/US-m5a8-secret-groups-name-paths-grouped-list-ty.md",
+  "verify": "export PATH=$HOME/.local/go/bin:$PATH && test -z \"$(gofmt -l .)\" && go vet ./... && go test -race ./...",
+  "last_verify": {
+    "result": "pass",
+    "exit_code": 0,
+    "command": "export PATH=$HOME/.local/go/bin:$PATH && test -z \"$(gofmt -l .)\" && go vet ./... && go test -race ./...",
+    "commit": "a291d5c",
+    "dirty": true,
+    "at": "2026-10-27T05:35:05Z"
+  },
+  "created_at": "2026-10-27T04:13:59Z",
+  "updated_at": "2026-10-27T05:35:05Z"
+}

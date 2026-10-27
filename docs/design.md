@@ -24,7 +24,8 @@ All user-facing text (prompts, errors, help, skill) is English.
 
 There is no command that prints a secret value.
 
-Without a terminal (how agents run commands), `set` may only add a new entry. Changing or removing
+Without a terminal (how agents run commands), `set` may only add a new entry: an agent stores a value
+the user gave it, on stdin or from a file (D-v0hh). Changing or removing
 an existing entry needs the person at a terminal and a confirmation, because the vault holds the
 only copy of a value. Error messages never suggest a way around this.
 
@@ -36,9 +37,9 @@ AGENTS.md line -> agv skills -> agv list [filter] -> agv run ...
 
 - `agv skills` (alias `skill`) prints the embedded SKILL.md.
 - `agv list [filter] [--json]`: entry names, descriptions, field names, env names and file flags,
-  in stable name order, control characters stripped.
-- An unknown name fails with the closest existing names. A missing secret is reported as
-  "ask the user to run `agv set NAME` in a separate terminal".
+  in stable name order, control characters stripped. Text and `--json` both show full names.
+- An unknown name fails with the names it was most likely meant to be (see Names and groups). A
+  missing secret is reported as "ask the user to run `agv set NAME` in a separate terminal".
 - Harnesses run agent commands in their own session with no TTY (pi, Claude Code, and Codex
   unless a call asks for `tty=true`). Commands agents use never prompt. Exception: Codex
   `exec_command` with `tty=true` gives the agent a PTY it can type into, so there it can answer
@@ -46,7 +47,8 @@ AGENTS.md line -> agv skills -> agv list [filter] -> agv run ...
 
 ## Data model
 
-An entry has a name (`^[A-Z][A-Z0-9_]*$`), a required description, a type (preset name or
+An entry has a name (one or more parts `[A-Z][A-Z0-9_]*` joined by `/`, such as `SHOP/PROD/DB`;
+see Names and groups), a required description, a type (preset name or
 `custom`) and one or more fields. A field has a name (`^[a-z][a-z0-9_]*$`), a value (bytes, may be
 multi-line, never trimmed), an optional env var name, and a `file` flag. Presets only fill these
 in at `set` time; changing a preset later does not change stored entries.
@@ -54,6 +56,51 @@ A single-field entry uses field `value`; `{{NAME}}` means `{{NAME.value}}`.
 
 Name, description, type, field names, env names and file flags are plaintext metadata visible to
 agents. `set` and help say so, so nobody puts a secret in a description.
+
+## Names and groups
+
+A name is `PART` or `PART/PART/...`, each part `[A-Z][A-Z0-9_]*`. The `/` only organises: the whole
+string is the one name of the secret, and every command takes that full name from any directory.
+Groups (`SHOP/`, `SHOP/PROD/`) are not stored: a group exists while some name starts with it.
+Nothing is scoped to a directory, repository or project, and nothing resolves a short or relative
+name (decision D-eas1). A vault of names without `/` works unchanged.
+
+Convention the skill teaches agents: `PROJECT/ENV/SERVICE`, ENV one of `PROD`, `STAGING`, `DEV`, and
+a description that names the service, the environment and the account.
+
+`agv list` prints each entry with its **full** name, so what is on screen is what to type; name
+order keeps a group together (`/` sorts before every other name character), so no heading lines.
+A filter that matches nothing suggests close groups (or names) on stdout; with `--json` stdout
+stays `[]` and the hint goes to stderr.
+
+Suggestions. A lookup that finds no entry (`run`, `rm`, `--env-from`, a placeholder) fails with
+stored names only, never the caller's text or a value. The first rule that finds anything decides:
+
+1. the same letters in another case or with another separator (`shop/prod/db`, `SHOP_PROD_DB`);
+2. every name that has the typed parts in order, those that end with them first, none cut off:
+   `DB` gives every `*/DB`, `SHOP/PROD` gives what is in that group;
+3. up to 3 names a typo away in one part (a swap counts as one edit). Short parts allow fewer
+   edits (none under 3 letters, one under 6), so `PROD` is never offered for `DEV` or `PRE`: a
+   suggestion must not send an agent to another environment's credentials. Names that contain or
+   are contained in the typed name come last.
+
+A suggestion is a guess about spelling, not a statement that the secret fits the job; the skill
+tells agents to check the environment part before using it. With no suggestion, the error names the
+deepest stored group of the typed name and what it holds one level down (`SHOP/ has: PROD/,
+STAGING/`), labelled as other secrets: a missing environment is visible, but never offered as the fix.
+
+`set` of a new name whose first new group is a typo of an existing group beside it (`SHPO/` next to
+`SHOP/`) asks before creating it, because a silent typo group would hide the secret from every
+lookup. At a terminal the person answers y/N (default no). Without one nothing is created and the
+message names the existing group, the corrected name, and the two ways on: `--new-group` (the
+caller asserts the group is new, for example `SHIP/` next to `SHOP/`) or a person running `set`.
+A group that resembles nothing, or a new environment (`DEV` beside `PROD`), is created without a question.
+`agv set` with no NAME lists the groups in use before it asks for the name.
+
+What `/` touches: the AES-GCM additional data is `NAME.field`, unambiguous because neither part
+can hold `.`; temp files for `{{file:...}}` are named by the label with `/` replaced by `.`, which
+is again unambiguous, so a name never creates a directory; redaction labels, audit records, webhook
+bodies and `--json` carry the full name unchanged (Go's JSON encoder does not escape `/`).
 
 ## Storage
 
@@ -121,8 +168,13 @@ Placeholders, in args after `CMD` and in `--env` templates:
 
 - `{{NAME}}`, `{{NAME.field}}`: the raw value.
 - `{{file:NAME}}`, `{{file:NAME.field}}`: path to a temp file holding the value.
-- Grammar: exactly `{{(file:)?[A-Z][A-Z0-9_]*(\.[a-z][a-z0-9_]*)?}}`. Anything else, such as
-  docker's `{{.ID}}`, passes through unchanged.
+- Grammar: exactly `{{(file:)?NAME(\.[a-z][a-z0-9_]*)?}}` with NAME as in Names and groups. Anything
+  else, such as docker's `{{.ID}}`, passes through unchanged.
+- One exception, for typos: text of the same shape in another letter case (`{{shop/prod/db}}`,
+  `{{SHOP/PROD/DB.Password}}`, `{{File:...}}`) is an error naming the right placeholder when its
+  corrected form resolves to a stored entry and field. Otherwise (`{{value}}` with no secret VALUE,
+  `{{item}}`, a field the entry lacks) it is not agv's and passes through. A foreign `{{token}}` that
+  collides with a stored TOKEN can be kept by writing it differently, for example `{{ token }}`.
 - One substitution pass; values are never re-expanded. No placeholders in `CMD` (argv[0]).
 - A value containing a NUL byte cannot go into an arg or env var: error naming `NAME.field` only.
 
@@ -211,6 +263,8 @@ and network traffic of the child.
   rest.
 - Warnings: value shorter than 6 bytes (redaction false positives), trailing whitespace or newline
   left in the value.
+- A new name is checked for a group that is a typo of an existing one (see Names and groups);
+  `--new-group` answers that question in advance.
 - Non-interactive: `agv set NAME --type T --desc D --field f=@path --field g=-` (`-` = stdin, at
   most one field). From stdin exactly one trailing `\n` or `\r\n` is dropped, as
   `docker login --password-stdin` does, so `gh auth token | agv set ...` stores the token. `@path`
@@ -252,8 +306,11 @@ before doing anything. `list` and `skills` do not read it.
 - `audit.enabled` (default `true`) turns the log off; webhooks do not depend on it.
   `audit.retention` is `Nd` (whole days) or a Go duration such as `36h`; default `7d`.
 - A webhook has `url` (required), `format` (`json`, the default, or `ntfy`), `actions` (any of
-  `run`, `set`, `rm`) and `secrets` (`NAME` or `NAME.field`). An empty or missing filter matches
-  everything; both filters must match. `NAME` matches every field of NAME, `NAME.field` only that one.
+  `run`, `set`, `rm`) and `secrets`. A secrets entry is `NAME` (every field of NAME),
+  `NAME.field` (that field), or a group prefix ending in `/` (`SHOP/PROD/`: every name below it, at
+  any depth). `*` stands for one whole part of a name in any of these (`*/PROD/`,
+  `*/PROD/DB.url`); a lone `*` and anything else is a config error. An empty or missing list
+  matches everything; both filters must match.
 
 ### Audit log
 
@@ -263,7 +320,7 @@ before doing anything. `list` and `skills` do not read it.
 {"time":"2026-10-10T13:45:37.554Z","action":"run","secrets":["AWS_PROD.region"],"program":"aws","cwd":"/home/me/proj","exit":0,"duration_ms":1234}
 ```
 
-`secrets` holds `NAME.field` labels for `run` and `NAME` for `set` and `rm`. `program` is argv[0]
+`secrets` holds `NAME.field` labels for `run` and `NAME` for `set` and `rm`, always the full name. `program` is argv[0]
 only (`run` only). A record has no field for a value, an argument or the environment, so none can
 reach the log or a webhook body. `time` is when the action finished.
 

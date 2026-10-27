@@ -2,6 +2,34 @@
 
 All notable changes to agv. Each release on GitHub shows the section for its tag.
 
+## [0.2.0] - 2026-10-27
+
+### Added
+
+- Groups in names: `SHOP/PROD/DB`, `SHOP/STAGING/DB`, `PERSONAL/GITHUB`. The full name is the one
+  name everywhere (`{{SHOP/PROD/DB.url}}`, `--env-from`, redaction labels, the audit log) and works
+  from any directory. `agv list` keeps each group together; `agv list shop` filters by name or
+  description. Names without `/` work as before.
+- Typo help that hands back the name to use: a misspelling, wrong case, the last part alone (`DB`
+  lists every `*/DB`) or a group. It never offers another environment (`SHOP/DEV/DB` is not "fixed"
+  to `SHOP/PROD/DB`); instead it shows what the group holds, marked as other secrets.
+- `agv set` asks before creating a group that looks like a typo of an existing one (`SHPO/` next to
+  `SHOP/`). Without a terminal it refuses, unless `--new-group` says the group really is new.
+  `agv set` with no name shows the groups in use.
+- Webhook `secrets` filters take groups (`SHOP/PROD/`) and `*` for one whole part (`*/PROD/`, every
+  production secret).
+- `agv skills` teaches agents to name secrets `PROJECT/ENV/SERVICE` with ENV `PROD`, `STAGING` or
+  `DEV`, and to write descriptions that name the service, environment and account.
+
+### Changed
+
+- Agents may add a new secret you give them (the value on stdin or from a file, never as an
+  argument). Changing or removing a stored secret still needs you at a terminal.
+- A placeholder that names a stored secret in the wrong case (`{{shop/prod/db}}`) is now an error
+  with the placeholder to write, instead of being passed through as text. Other tools' templates
+  (`{{.ID}}`, `{{ .Values.x }}`) still pass untouched.
+- Built with Go 1.27.3, which fixes a security issue in `crypto/x509`.
+
 ## [0.1.2] - 2026-10-10
 
 ### Added

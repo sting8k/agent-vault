@@ -71,7 +71,8 @@ func (b *builder) file(label string, value []byte) (string, error) {
 			return "", err
 		}
 	}
-	path := filepath.Join(b.dir, label)
+	// "/" in a name would make a directory; "." cannot occur in a name, so the result is unique.
+	path := filepath.Join(b.dir, strings.ReplaceAll(label, "/", "."))
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("write temp file for %s: %w", label, err)

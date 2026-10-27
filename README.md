@@ -38,7 +38,7 @@ Run this in **your own terminal**, not through the agent:
 
 ```console
 $ agv set
-Name (A-Z, 0-9, _): AWS_PROD
+Name (A-Z, 0-9, _; group with /, as in SHOP/PROD/DB): AWS_PROD
 Types: api-token, basic, db-url, aws, azure-sp, gcp-sa, ssh-key, custom
 Type: aws
 Description (agents can read it with 'agv list'; never put a secret here): AWS prod, read-only S3
@@ -52,8 +52,22 @@ Each type fills in the right fields and environment variables for you; `custom` 
 your own. Running `agv set NAME` again updates an entry, and an empty answer keeps the current
 value. `agv rm NAME` deletes one.
 
+You can also give a value to your agent and let it add a **new** secret (it passes the value on
+stdin, never as an argument). It cannot change or remove one. The value then stays in your chat
+history, so your own terminal is the safer way.
+
 Write descriptions that help the agent choose: "GitHub PAT, read-only, org acme" is useful,
 "token" is not. Names and descriptions are **not** encrypted, so never put a secret in them.
+
+### Many projects and environments
+
+Group secrets with `/` in the name: `SHOP/PROD/DB`, `SHOP/STAGING/DB`, `PERSONAL/GITHUB`. The
+convention is `PROJECT/ENV/SERVICE` with ENV `PROD`, `STAGING` or `DEV`, and a description that names
+the service, environment and account. `agv list` keeps each group together and `agv list shop` filters it.
+Groups only organise: the full name is the one name, and it works from any directory. agv helps with
+typos: a wrong case, a misspelling or just the last part (`DB`) gets the stored names you may have
+meant, and `agv set` asks before it creates a group that looks like a typo of an existing one
+(`SHPO/` next to `SHOP/`; `--new-group` answers that in advance). Names without `/` keep working.
 
 ## Let your agent use it
 
@@ -102,7 +116,8 @@ by hand (`chmod 600`):
 - `retention` is days (`14d`) or hours (`36h`). `"enabled": false` stops the log.
 - `format` is `ntfy` (a readable message for the ntfy app) or `json` (the log line, for your own
   receiver; Slack and Discord reject it). `actions` and `secrets` narrow what is sent; leave them
-  out to get everything. `"secrets": ["AWS_PROD"]` covers all fields of AWS_PROD.
+  out to get everything. `"secrets": ["AWS_PROD"]` covers all fields of AWS_PROD; `"SHOP/PROD/"`
+  covers everything in that group, and `*` stands for one part: `"*/PROD/"` is every project's prod.
 - A topic or webhook URL is a secret too: store it with `agv set NTFY_TOPIC` (type `api-token`,
   value `https://ntfy.sh/<your-topic>`) and write `{{NTFY_TOPIC}}` as the `url`. agv never prints it.
 - A log or webhook that fails is a warning on stderr; the command still runs and keeps its exit

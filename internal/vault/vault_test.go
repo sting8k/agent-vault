@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -374,6 +375,10 @@ func TestSetRejectsInvalidEntriesAndLeavesTheVaultAlone(t *testing.T) {
 		edit func(c *Change)
 	}{
 		"bad name":          {"aws", ok},
+		"lower-case group":  {"shop/prod/db", ok},
+		"empty part":        {"SHOP//DB", ok},
+		"trailing slash":    {"SHOP/PROD/", ok},
+		"part with a digit": {"SHOP/2024/DB", ok},
 		"blank description": {"N", func(c *Change) { c.Description = "  " }},
 		"newline in desc":   {"N", func(c *Change) { c.Description = "a\nb" }},
 		"bad type":          {"N", func(c *Change) { c.Type = "AWS" }},
@@ -447,6 +452,116 @@ func TestHome(t *testing.T) {
 		got, err := Home(tc.env)
 		if (err != nil) != tc.fail || got != tc.want {
 			t.Errorf("Home(%v) = %q, %v", tc.env, got, err)
+		}
+	}
+}
+
+// A grouped name is one entry name: only the whole string is stored, and it is part of what the
+// ciphertext is bound to.
+func TestGroupedNameIsTheOnlyNameAndIsBoundIntoTheCiphertext(t *testing.T) {
+	v := newVault(t)
+	setValue(t, v, "SHOP/PROD/DB", sentinel)
+	f, err := v.Fields("SHOP/PROD/DB")
+	if err != nil || string(f["value"].Value) != sentinel {
+		t.Fatalf("round trip: %v", err)
+	}
+	for _, group := range []string{"SHOP", "SHOP/PROD", "DB"} {
+		if _, err := v.Entry(group); !isNotFound(err) {
+			t.Errorf("%s is not an entry, got %v", group, err)
+		}
+	}
+	setValue(t, v, "SHOP/STAGING/DB", "other")
+	rewrite(t, v, func(f *file) {
+		f.Entries["SHOP/STAGING/DB"].Fields["value"].Value = f.Entries["SHOP/PROD/DB"].Fields["value"].Value
+	})
+	if _, err := v.Fields("SHOP/STAGING/DB"); err == nil {
+		t.Error("a value moved to another group still decrypts")
+	}
+}
+
+func TestSuggestHandsBackTheRightNames(t *testing.T) {
+	names := []string{"AWS_PROD", "DB_URL", "SHOP/PROD/DB", "SHOP/PROD/STRIPE", "SHOP/STAGING/DB", "SHIP/PROD/DB", "PERSONAL/GITHUB", "PERSONAL/DB"}
+	cases := []struct {
+		typed string
+		want  []string // exactly these, in this order; nil: nothing
+	}{
+		{"AWS_PORD", []string{"AWS_PROD"}},
+		{"shop/prod/db", []string{"SHOP/PROD/DB"}},
+		{"SHOP_PROD_DB", []string{"SHOP/PROD/DB"}},
+		{"DB", []string{"PERSONAL/DB", "SHIP/PROD/DB", "SHOP/PROD/DB", "SHOP/STAGING/DB"}}, // every one, not cut at 3
+		{"PROD/DB", []string{"SHIP/PROD/DB", "SHOP/PROD/DB"}},
+		{"SHOP/PROD", []string{"SHOP/PROD/DB", "SHOP/PROD/STRIPE"}},
+		{"SHPO/PROD/DB", []string{"SHOP/PROD/DB"}},
+		{"SHOP/PRD/DB", []string{"SHOP/PROD/DB"}},
+		{"SHOP/PROD/STRIPEE", []string{"SHOP/PROD/STRIPE"}},
+		{"SHOP/PROD/BD", []string{"SHOP/PROD/DB"}}, // a swap in a two-letter part
+		// A different environment is not a typo of PROD: suggesting it would send the agent to the wrong credentials.
+		{"SHOP/DEV/DB", nil},
+		{"SHOP/PRE/DB", nil},
+		{"OTHER_THING", nil},
+	}
+	for _, c := range cases {
+		if got := Suggest(c.typed, names); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("Suggest(%q) = %q, want %q", c.typed, got, c.want)
+		}
+	}
+	v := newVault(t)
+	for _, n := range names {
+		setValue(t, v, n, sentinel)
+	}
+	_, err := v.Fields("shop/prod/db")
+	var nf *NotFoundError
+	if !errors.As(err, &nf) || !reflect.DeepEqual(nf.Suggestions, []string{"SHOP/PROD/DB"}) || strings.Contains(err.Error(), sentinel) {
+		t.Fatalf("Fields(shop/prod/db) = %v", err)
+	}
+}
+
+// A missing environment gets no suggestion, but the error shows what its group holds, so the
+// agent sees that DEV is not stored instead of guessing; a typo still gets only its suggestion.
+func TestUnknownNameShowsWhatItsGroupHolds(t *testing.T) {
+	v := newVault(t)
+	for _, n := range []string{"SHOP/PROD/DB", "SHOP/PROD/STRIPE", "SHOP/STAGING/DB", "AWS_PROD"} {
+		setValue(t, v, n, sentinel)
+	}
+	cases := []struct {
+		typed, group string
+		held         []string
+	}{
+		{"SHOP/DEV/DB", "SHOP", []string{"PROD/", "STAGING/"}},
+		{"SHOP/PROD/REDIS", "SHOP/PROD", []string{"DB", "STRIPE"}},
+		{"SHOP/PRD/DB", "", nil}, // a typo: the suggestion alone
+		{"ACME/PROD/DB", "", nil},
+	}
+	for _, c := range cases {
+		_, err := v.Fields(c.typed)
+		var nf *NotFoundError
+		if !errors.As(err, &nf) || nf.Group != c.group || !reflect.DeepEqual(nf.InGroup, c.held) {
+			t.Errorf("Fields(%q) = %v", c.typed, err)
+		}
+		if c.group != "" && (strings.Contains(err.Error(), "closest") || !strings.Contains(err.Error(), c.group+"/ has: ")) {
+			t.Errorf("Fields(%q) error = %q", c.typed, err)
+		}
+	}
+}
+
+func TestNewGroupNearFindsOnlyTypoGroups(t *testing.T) {
+	names := []string{"AWS_PROD", "SHOP/PROD/DB", "SHOP/STAGING/DB"}
+	cases := []struct {
+		name, group string
+		near        []string
+	}{
+		{"SHPO/PROD/DB", "SHPO", []string{"SHOP"}},
+		{"SHIP/PROD/DB", "SHIP", []string{"SHOP"}}, // may be real; the person decides
+		{"SHOP/PRD/DB", "SHOP/PRD", []string{"SHOP/PROD"}},
+		{"SHOP/PROD/NEWSVC", "", nil}, // the group exists
+		{"SHOP/DEV/DB", "", nil},      // a new environment, not a typo
+		{"ACME/PROD/DB", "", nil},
+		{"AWS_STAGING", "", nil}, // no group at all
+	}
+	for _, c := range cases {
+		group, near := NewGroupNear(c.name, names)
+		if (group != "" || c.group != "") && group != c.group || !reflect.DeepEqual(near, c.near) {
+			t.Errorf("NewGroupNear(%q) = %q, %q; want %q, %q", c.name, group, near, c.group, c.near)
 		}
 	}
 }

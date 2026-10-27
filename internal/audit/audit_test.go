@@ -138,6 +138,38 @@ func TestWebhookFilters(t *testing.T) {
 	}
 }
 
+func TestWebhookGroupFilters(t *testing.T) {
+	run := Record{Action: ActionRun, Secrets: []string{"SHOP/PROD/DB.url", "SHOP/STAGING/STRIPE.value"}}
+	rm := Record{Action: ActionRm, Secrets: []string{"SHOP/PROD/DB"}}
+	cases := []struct {
+		filter  string
+		run, rm bool
+	}{
+		{"SHOP/PROD/DB", true, true},
+		{"SHOP/PROD/DB.url", true, false},
+		{"SHOP/PROD/DB.key", false, false},
+		{"SHOP/PROD/", true, true},
+		{"SHOP/", true, true},
+		{"SHOP/PROD", false, false}, // a name, not the group
+		{"SHOP/STAGING/", true, false},
+		{"PROD/", false, false}, // a prefix starts at the top
+		{"*/PROD/", true, true},
+		{"*/STAGING/STRIPE", true, false},
+		{"SHOP/*/DB.url", true, false},
+		{"*/", true, true},
+		{"OTHER/", false, false},
+	}
+	for _, c := range cases {
+		w := Webhook{Secrets: []string{c.filter}}
+		if got := w.matches(run); got != c.run {
+			t.Errorf("%s on run: got %v", c.filter, got)
+		}
+		if got := w.matches(rm); got != c.rm {
+			t.Errorf("%s on rm: got %v", c.filter, got)
+		}
+	}
+}
+
 func TestConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfg, err := LoadConfig(dir) // no file: defaults
@@ -148,7 +180,7 @@ func TestConfig(t *testing.T) {
 	path := filepath.Join(dir, ConfigFile)
 	write := func(s string) { os.WriteFile(path, []byte(s), 0o600) }
 	write(`{"audit": {"enabled": false, "retention": "36h"},
-	        "webhooks": [{"url": "{{NTFY_TOPIC}}", "format": "ntfy", "actions": ["run"], "secrets": ["AWS_PROD.region"]}]}`)
+	        "webhooks": [{"url": "{{NTFY_TOPIC}}", "format": "ntfy", "actions": ["run"], "secrets": ["AWS_PROD.region", "SHOP/PROD/", "*/PROD/DB.url"]}]}`)
 	cfg, err = LoadConfig(dir)
 	if err != nil || cfg.Enabled || cfg.Retention != 36*time.Hour || len(cfg.Webhooks) != 1 || cfg.Webhooks[0].Format != "ntfy" {
 		t.Fatalf("valid file: %+v, %v", cfg, err)
@@ -164,6 +196,11 @@ func TestConfig(t *testing.T) {
 		`{"webhooks": [{"url": "https://hooks.test/TOKEN-9", "format": "xml"}]}`,
 		`{"webhooks": [{"url": "ftp://hooks.test/TOKEN-9"}]}`,
 		`{"webhooks": [{"url": "https://hooks.test/TOKEN-9", "secrets": ["aws"]}]}`,
+		`{"webhooks": [{"url": "https://hooks.test/TOKEN-9", "secrets": ["shop/prod/"]}]}`,
+		`{"webhooks": [{"url": "https://hooks.test/TOKEN-9", "secrets": ["SHOP//"]}]}`,
+		`{"webhooks": [{"url": "https://hooks.test/TOKEN-9", "secrets": ["SHOP/.value"]}]}`,
+		`{"webhooks": [{"url": "https://hooks.test/TOKEN-9", "secrets": ["SHOP*/"]}]}`,
+		`{"webhooks": [{"url": "https://hooks.test/TOKEN-9", "secrets": ["*"]}]}`,
 		`{} {}`,
 	} {
 		write(bad)

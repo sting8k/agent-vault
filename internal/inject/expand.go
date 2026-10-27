@@ -6,7 +6,7 @@ import "errors"
 // and single pass as Build. It is for text agv itself uses, such as a webhook URL, so it writes
 // no temp files and {{file:...}} is an error. Error messages carry names only, never values.
 func Expand(tmpl string, src Source) (string, error) {
-	for _, m := range placeholder.FindAllStringSubmatchIndex(tmpl, -1) {
+	for _, m := range reference.FindAllStringSubmatchIndex(tmpl, -1) {
 		if m[2] >= 0 {
 			return "", errors.New("{{file:...}} references cannot be used here")
 		}

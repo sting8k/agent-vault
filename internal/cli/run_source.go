@@ -23,7 +23,12 @@ func (s vaultSource) Entry(name string) (map[string]inject.Field, error) {
 	fields, err := s.v.Fields(name)
 	var nf *vault.NotFoundError
 	if errors.As(err, &nf) {
-		return nil, fmt.Errorf("%w; if it is not stored, ask the user to run 'agv set %s' in a separate terminal", err, name)
+		// A name that is not even valid (shop/prod/db) cannot be passed to set; the suggestion is the advice.
+		set := "agv set"
+		if vault.CheckName(name) == nil {
+			set += " " + name
+		}
+		return nil, fmt.Errorf("%w\nNot stored? If the user gave you the value, add it with '%s'; otherwise ask the user to run it in a separate terminal.", err, set)
 	}
 	if err != nil {
 		return nil, err

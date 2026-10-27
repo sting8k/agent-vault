@@ -12,7 +12,8 @@ const listUsage = `usage: agv list [filter] [--json]
 
 Lists the stored secrets: name, type, description, and each field with its env name
 and file flag. It never shows a value. filter keeps entries whose name or description
-contains it (ignoring case).
+contains it (ignoring case). Entries are in name order, so a group such as SHOP/PROD/
+stays together; the full name shown is the one to use.
 `
 
 type listField struct {
@@ -48,16 +49,43 @@ func cmdList(argv []string, sys IO) int {
 	if err != nil {
 		return fail(sys, err)
 	}
-	entries := listEntries(all, strings.Join(a.pos, ""))
+	filter := strings.Join(a.pos, "")
+	entries := listEntries(all, filter)
+	hint := ""
+	if len(entries) == 0 && len(all) > 0 {
+		hint = closeTo(all, filter)
+	}
 	if a.flags["json"] {
 		enc := json.NewEncoder(sys.Stdout)
 		enc.SetIndent("", "  ")
 		enc.SetEscapeHTML(false)
 		enc.Encode(entries)
+		if hint != "" { // stdout stays pure JSON
+			fmt.Fprintln(sys.Stderr, hint)
+		}
 		return 0
 	}
-	printEntries(sys, entries, len(all))
+	printEntries(sys, entries, len(all), hint)
 	return 0
+}
+
+// closeTo says which groups, or failing that which names, a filter that matched nothing is
+// close to. It prints stored names only, never the filter.
+func closeTo(all []vault.EntryInfo, filter string) string {
+	names := make([]string, len(all))
+	for i, e := range all {
+		names[i] = e.Name
+	}
+	if groups := vault.Suggest(filter, vault.Groups(names)); len(groups) > 0 {
+		for i := range groups {
+			groups[i] += "/"
+		}
+		return fmt.Sprintf("Close groups: %s. Run `agv list %s` to see what is in one.", strings.Join(groups, ", "), groups[0])
+	}
+	if close := vault.Suggest(filter, names); len(close) > 0 {
+		return "Close names: " + strings.Join(close, ", ") + "."
+	}
+	return ""
 }
 
 // listEntries applies the filter and strips control characters from every string.
@@ -82,13 +110,18 @@ func fieldsOf(e vault.EntryInfo) []listField {
 	return out
 }
 
-func printEntries(sys IO, entries []listEntry, stored int) {
+// printEntries prints the entries with their full names. entries are in name order, which keeps
+// the members of a group together ("/" sorts before every character a name part may hold).
+func printEntries(sys IO, entries []listEntry, stored int, hint string) {
 	switch {
 	case stored == 0:
-		fmt.Fprintln(sys.Stdout, "No secrets are stored. Ask the user to run `agv set NAME` in a separate terminal.")
+		fmt.Fprintln(sys.Stdout, "No secrets are stored. Add one the user gives you with `agv set NAME`, or ask the user to run it in a separate terminal.")
 		return
 	case len(entries) == 0:
 		fmt.Fprintln(sys.Stdout, "No secret matches that filter. Run `agv list` to see all of them.")
+		if hint != "" {
+			fmt.Fprintln(sys.Stdout, hint)
+		}
 		return
 	}
 	for _, e := range entries {

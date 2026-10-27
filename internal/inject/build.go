@@ -18,9 +18,12 @@ type Request struct {
 }
 
 var (
-	placeholder = regexp.MustCompile(`\{\{(file:)?([A-Z][A-Z0-9_]*)(?:\.([a-z][a-z0-9_]*))?\}\}`)
-	entryName   = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
-	fieldName   = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	// placeholder is the grammar: NAME is parts joined by "/", upper case; field is lower case.
+	placeholder = regexp.MustCompile(`\{\{(file:)?([A-Z][A-Z0-9_]*(?:/[A-Z][A-Z0-9_]*)*)(?:\.([a-z][a-z0-9_]*))?\}\}`)
+	// reference finds the same shape in any letter case, to tell {{shop/prod/db}} from foreign text.
+	reference = regexp.MustCompile(`\{\{((?i:file:))?([A-Za-z][A-Za-z0-9_]*(?:/[A-Za-z][A-Za-z0-9_]*)*)(?:\.([A-Za-z][A-Za-z0-9_]*))?\}\}`)
+	entryName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*(/[A-Z][A-Z0-9_]*)*$`)
+	fieldName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
 
 // Build resolves every reference of req against src and writes the temp files
@@ -90,7 +93,8 @@ func (b *builder) envSettings(req Request) ([]setting, error) {
 		}
 	}
 	for _, n := range req.EnvFrom {
-		if !entryName.MatchString(n) {
+		// A name that is only in the wrong case goes on to the lookup, which suggests the right one.
+		if !entryName.MatchString(strings.ToUpper(n)) {
 			return nil, fmt.Errorf("--env-from: %q is not a secret name", n)
 		}
 		entry, err := b.entry(n)
@@ -163,22 +167,33 @@ type builder struct {
 }
 
 // expand substitutes the placeholders of one template in a single pass:
-// substituted text is never scanned again.
+// substituted text is never scanned again. Text that has the shape of a placeholder in
+// another letter case is left alone, unless it names a stored secret (see caseMiss).
 func (b *builder) expand(tmpl string) (string, error) {
 	var out strings.Builder
 	last := 0
-	for _, m := range placeholder.FindAllStringSubmatchIndex(tmpl, -1) {
+	for _, m := range reference.FindAllStringSubmatchIndex(tmpl, -1) {
 		out.WriteString(tmpl[last:m[0]])
-		name, field := tmpl[m[4]:m[5]], "value"
+		last = m[1]
+		text, file, name, field := tmpl[m[0]:m[1]], m[2] >= 0, tmpl[m[4]:m[5]], ""
 		if m[6] >= 0 {
 			field = tmpl[m[6]:m[7]]
 		}
-		s, err := b.render(name, field, m[2] >= 0)
+		if !placeholder.MatchString(text) {
+			if err := b.caseMiss(text, file, name, field); err != nil {
+				return "", err
+			}
+			out.WriteString(text)
+			continue
+		}
+		if field == "" {
+			field = "value"
+		}
+		s, err := b.render(name, field, file)
 		if err != nil {
 			return "", err
 		}
 		out.WriteString(s)
-		last = m[1]
 	}
 	out.WriteString(tmpl[last:])
 	return out.String(), nil
@@ -227,4 +242,30 @@ func sortedKeys(m map[string]Field) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// caseMiss is the error for text such as {{shop/prod/db}} that is a placeholder but for its
+// letter case and would reference a stored field if the case were right. Any other text, such as
+// the {{value}} of a template engine, is not agv's and passes through. The message repeats text
+// that equals a stored name apart from case, never anything else the caller wrote.
+func (b *builder) caseMiss(text string, file bool, name, field string) error {
+	up, low := strings.ToUpper(name), "value"
+	if field != "" {
+		low = strings.ToLower(field)
+	}
+	entry, err := b.entry(up)
+	if err != nil {
+		return nil
+	}
+	if _, ok := entry[low]; !ok {
+		return nil
+	}
+	want := up
+	if field != "" {
+		want += "." + low
+	}
+	if file {
+		want = "file:" + want
+	}
+	return fmt.Errorf("%s names a stored secret, but names are upper case and fields lower case: write {{%s}}", text, want)
 }

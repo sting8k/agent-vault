@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "D-v0hh",
+  "title": "Agents add new secrets the user hands them; changing and removing stay with the user at a terminal; no command prints a value",
+  "status": "accepted",
+  "doc": "docs/decisions/D-v0hh-agents-add-new-secrets-the-user-hands-th.md",
+  "created_at": "2026-10-27T05:26:24Z",
+  "updated_at": "2026-10-27T05:26:24Z"
+}

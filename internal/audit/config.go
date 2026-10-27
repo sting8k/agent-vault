@@ -37,7 +37,7 @@ type Webhook struct {
 	URL     string   `json:"url"`     // literal, or a template such as {{NTFY_TOPIC}} resolved from the vault
 	Format  string   `json:"format"`  // "json" (default) or "ntfy"
 	Actions []string `json:"actions"` // run, set, rm
-	Secrets []string `json:"secrets"` // NAME matches NAME and NAME.field; NAME.field matches that field
+	Secrets []string `json:"secrets"` // NAME matches NAME and NAME.field; NAME.field that field; SHOP/PROD/ a group; * any one part
 }
 
 // Actions that are logged.
@@ -55,7 +55,9 @@ type configFile struct {
 	Webhooks []Webhook `json:"webhooks"`
 }
 
-var secretRef = regexp.MustCompile(`^[A-Z][A-Z0-9_]*(\.[a-z][a-z0-9_]*)?$`)
+// secretRef is a webhook secrets filter: a name, or a group prefix ending in "/", whose parts
+// are names or "*" (one whole part); a name, not a prefix, may end in .field.
+var secretRef = regexp.MustCompile(`^(\*|[A-Z][A-Z0-9_]*)(/(\*|[A-Z][A-Z0-9_]*))*(/|\.[a-z][a-z0-9_]*)?$`)
 
 // LoadConfig reads dir/config.json. A missing file is not an error; an invalid one is, and the
 // message names the file. Unknown keys are rejected so a typo cannot silently turn a setting off.
@@ -143,8 +145,8 @@ func (w Webhook) validate() error {
 		}
 	}
 	for _, s := range w.Secrets {
-		if !secretRef.MatchString(s) {
-			return errors.New("secrets must list names such as AWS_PROD or AWS_PROD.region")
+		if !secretRef.MatchString(s) || s == "*" || strings.HasPrefix(s, "*.") {
+			return errors.New("secrets must list names such as AWS_PROD, AWS_PROD.region, SHOP/PROD/DB, a group such as SHOP/PROD/ or */PROD/ (* is one whole part); to match everything leave the list out")
 		}
 	}
 	return nil
@@ -170,10 +172,34 @@ func (w Webhook) matches(r Record) bool {
 	}
 	for _, have := range r.Secrets {
 		for _, want := range w.Secrets {
-			if have == want || strings.HasPrefix(have, want+".") {
+			if refMatches(want, have) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// refMatches reports whether the filter want covers have, a NAME.field label (run) or a NAME
+// (set, rm). want is NAME (every field), NAME.field, or a group prefix ending in "/" (every name
+// below it); "*" in want stands for exactly one part of the name.
+func refMatches(want, have string) bool {
+	wantName, wantField, hasField := strings.Cut(want, ".")
+	haveName, haveField, _ := strings.Cut(have, ".")
+	wantParts := strings.Split(strings.TrimSuffix(wantName, "/"), "/")
+	haveParts := strings.Split(haveName, "/")
+	if strings.HasSuffix(wantName, "/") {
+		if len(haveParts) <= len(wantParts) {
+			return false
+		}
+		haveParts = haveParts[:len(wantParts)]
+	} else if len(haveParts) != len(wantParts) {
+		return false
+	}
+	for i, p := range wantParts {
+		if p != "*" && p != haveParts[i] {
+			return false
+		}
+	}
+	return !hasField || wantField == haveField
 }

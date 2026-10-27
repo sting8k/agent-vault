@@ -36,7 +36,7 @@ func build(t *testing.T, src Source, req Request) (*Plan, string, error) {
 
 func TestGrammarLeavesForeignBracesAlone(t *testing.T) {
 	src := fakeSource{"A": one("VAL"), "DB": {"password": {Value: []byte("PW")}}}
-	untouched := []string{"{{.ID}}", "{{.Names}}", "{{a}}", "{{A.Field}}", "{{ A }}", "{{file:}}", "{{A.}}", "{{A", "{A}"}
+	untouched := []string{"{{.ID}}", "{{.Names}}", "{{b}}", "{{A.Field}}", "{{ A }}", "{{file:}}", "{{A.}}", "{{A", "{A}"}
 	argv := append([]string{"cmd"}, untouched...)
 	argv = append(argv, "x{{A}}y", "{{DB.password}}", "{{{A}}}")
 	p, _, err := build(t, src, Request{Argv: argv})
@@ -47,6 +47,61 @@ func TestGrammarLeavesForeignBracesAlone(t *testing.T) {
 	want = append(want, "xVALy", "PW", "{VAL}")
 	if !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("argv = %q, want %q", p.Argv, want)
+	}
+}
+
+// A grouped name is one name: it resolves, labels the secret with the full name, and a file
+// reference stays inside the run directory although the name holds "/".
+func TestGroupedNamesResolveAndFileReferencesStayInTheRunDirectory(t *testing.T) {
+	src := fakeSource{
+		"SHOP/PROD/DB": {"url": {Value: []byte("URL-VALUE"), Env: "DATABASE_URL"}, "key": {Value: []byte("PEM"), File: true}},
+	}
+	p, root, err := build(t, src, Request{
+		Argv: []string{"cmd", "{{SHOP/PROD/DB.url}}", "{{file:SHOP/PROD/DB.key}}"}, EnvFrom: []string{"SHOP/PROD/DB"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := p.Argv[2]
+	if p.Argv[1] != "URL-VALUE" || filepath.Dir(path) != filepath.Join(root, strconv.Itoa(os.Getpid())) || !contains(p.Env, "DATABASE_URL=URL-VALUE") {
+		t.Fatalf("argv=%q", p.Argv)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "PEM" {
+		t.Fatal("wrong file content")
+	}
+	labels := map[string]bool{}
+	for _, s := range p.Secrets {
+		labels[s.Label] = true
+	}
+	if !labels["SHOP/PROD/DB.url"] || !labels["SHOP/PROD/DB.key"] {
+		t.Fatalf("secrets = %v", labels)
+	}
+}
+
+// {{shop/prod/db}} is a mistyped placeholder, not another tool's text, when its upper-case form
+// is a stored reference: that is an error naming the right one. Text that names nothing stored
+// still passes, so Go, Helm and docker templates keep working.
+func TestCaseOnlyMissIsAnErrorWithTheRightPlaceholder(t *testing.T) {
+	src := fakeSource{"A": one("VAL"), "SHOP/PROD/DB": {"password": {Value: []byte("PW")}, "url": {Value: []byte("U"), File: true}}}
+	for tmpl, want := range map[string]string{
+		"{{a}}":                         "{{A}}",
+		"{{shop/prod/db.password}}":     "{{SHOP/PROD/DB.password}}",
+		"{{SHOP/PROD/DB.Password}}":     "{{SHOP/PROD/DB.password}}",
+		"{{Shop/Prod/Db.PASSWORD}}":     "{{SHOP/PROD/DB.password}}",
+		"x {{File:shop/prod/db.url}} y": "{{file:SHOP/PROD/DB.url}}",
+	} {
+		for _, req := range []Request{{Argv: []string{"cmd", tmpl}}, {Argv: []string{"cmd"}, Env: []string{"V=" + tmpl}}} {
+			_, _, err := build(t, src, req)
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: error %v, want it to name %s", tmpl, err, want)
+			}
+		}
+	}
+	for _, tmpl := range []string{"{{value}}", "{{.ID}}", "{{ .Values.x }}", "{{shop/prod/other}}", "{{shop/prod/db.nofield}}", "{{a.nofield}}", "{{item}}"} {
+		p, _, err := build(t, src, Request{Argv: []string{"cmd", tmpl}})
+		if err != nil || p.Argv[1] != tmpl {
+			t.Errorf("%s was not left alone: %v %v", tmpl, p, err)
+		}
 	}
 }
 

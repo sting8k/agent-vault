@@ -11,7 +11,7 @@ import (
 	"github.com/sting8k/agent-vault/internal/vault"
 )
 
-const setUsage = `usage: agv set [NAME] [--type TYPE] [--desc TEXT] [--field FIELD=@PATH|-]... [--unset FIELD]...
+const setUsage = `usage: agv set [NAME] [--type TYPE] [--desc TEXT] [--field FIELD=@PATH|-]... [--unset FIELD]... [--new-group]
 
 Adds or updates a secret. Run it in your own terminal, not through an agent.
 
@@ -25,6 +25,11 @@ with --unset.
   --field FIELD=@PATH  read a field's value from a file
   --field FIELD=-      read a field's value from stdin, minus one trailing newline (at most one field)
   --unset FIELD        remove a field of an existing entry
+  --new-group          create the name's group even though it looks like a typo of an existing one
+
+NAME may be grouped with "/": SHOP/PROD/DB is the secret DB in group SHOP/PROD/. The whole
+string is the name, everywhere. Groups only organise: they are not stored and not scopes.
+A group close to an existing one (SHPO/ when SHOP/ exists) is asked about first.
 
 Values are never accepted on the command line.
 Name, description, type, field names, env names and file flags are stored in plain text and
@@ -52,7 +57,7 @@ func cmdSet(argv []string, sys IO) int {
 }
 
 func runSet(argv []string, sys IO) error {
-	a, err := parseArgs(argv, []string{"help"}, []string{"type", "desc", "field", "unset"})
+	a, err := parseArgs(argv, []string{"help", "new-group"}, []string{"type", "desc", "field", "unset"})
 	if err != nil {
 		return fmt.Errorf("set: %w (see 'agv set --help')", err)
 	}
@@ -95,7 +100,7 @@ func runSet(argv []string, sys IO) error {
 		return s.need("what to store")
 	}
 
-	name, err := s.name(a.pos)
+	name, err := s.name(a.pos, all)
 	if err != nil {
 		return err
 	}
@@ -112,6 +117,10 @@ func runSet(argv []string, sys IO) error {
 			return fmt.Errorf("%s already exists; changing it needs your confirmation: run 'agv set %s' in your own terminal", name, name)
 		}
 		s.prompted = true
+	} else if !a.flags["new-group"] {
+		if err := s.checkGroup(name, all); err != nil {
+			return err
+		}
 	}
 	d := &draft{name: name, cur: cur, unset: unset}
 	if d.typ, err = s.entryType(typeOpt, hasType, cur); err != nil {
@@ -181,14 +190,70 @@ func (s *session) askText(prompt, def string, valid func(string) error) (string,
 	}
 }
 
-func (s *session) name(pos []string) (string, error) {
+func (s *session) name(pos []string, all []vault.EntryInfo) (string, error) {
+	names := entryNames(all)
+	valid := func(n string) error {
+		err := vault.CheckName(n)
+		if err == nil {
+			return nil
+		}
+		// Only stored names are offered, so what was typed is never repeated.
+		if close := vault.Suggest(n, names); len(close) > 0 {
+			return fmt.Errorf("%w; closest: %s", err, strings.Join(close, ", "))
+		}
+		return err
+	}
 	if len(pos) == 1 {
-		return pos[0], vault.CheckName(pos[0])
+		return pos[0], valid(pos[0])
 	}
 	if s.t == nil {
 		return "", s.need("the name")
 	}
-	return s.askText("Name (A-Z, 0-9, _): ", "", vault.CheckName)
+	if groups := vault.Groups(names); len(groups) > 0 {
+		for i := range groups {
+			groups[i] += "/"
+		}
+		fmt.Fprintf(s.sys.Stderr, "Groups in use: %s\n", strings.Join(groups, ", "))
+	}
+	return s.askText("Name (A-Z, 0-9, _; group with /, as in SHOP/PROD/DB): ", "", valid)
+}
+
+func entryNames(all []vault.EntryInfo) []string {
+	names := make([]string, len(all))
+	for i, e := range all {
+		names[i] = e.Name
+	}
+	return names
+}
+
+// checkGroup stops a new entry from silently opening a group that is a typo of an existing one
+// (SHPO/PROD/DB beside SHOP/). A person at a terminal is asked. Without one nothing is created
+// and the message names the way on: use the existing group, or repeat with --new-group.
+func (s *session) checkGroup(name string, all []vault.EntryInfo) error {
+	group, near := vault.NewGroupNear(name, entryNames(all))
+	if len(near) == 0 {
+		return nil
+	}
+	rest := name[len(group):] // starts with "/"
+	var instead []string
+	for _, n := range near[:min(len(near), 3)] {
+		instead = append(instead, n+rest)
+	}
+	have := strings.Join(near, "/, ") + "/"
+	if s.t == nil {
+		return fmt.Errorf("%s/ would be a new group, and %s already exists. If you meant it, use %s. "+
+			"If %s/ really is new, repeat with --new-group, or ask the user to run 'agv set %s' in a separate terminal",
+			group, have, strings.Join(instead, " or "), group, name)
+	}
+	ok, err := yesNo(s.t, fmt.Sprintf("%s/ is a new group, and %s exists (did you mean %s?). Create %s in the new group? [y/N] ",
+		group, have, strings.Join(instead, " or "), name), false)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errCancelled
+	}
+	return nil
 }
 
 func (s *session) entryType(opt string, has bool, cur *vault.EntryInfo) (string, error) {

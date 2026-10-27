@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "D-eas1",
+  "title": "Secret grouping is for telling what a secret is for; no scoping by working directory",
+  "status": "accepted",
+  "doc": "docs/decisions/D-eas1-secret-grouping-is-for-telling-what-a-se.md",
+  "created_at": "2026-10-27T04:02:51Z",
+  "updated_at": "2026-10-27T04:02:51Z"
+}
