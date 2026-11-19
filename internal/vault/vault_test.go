@@ -158,30 +158,6 @@ func TestKeyVaultStateTable(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// failing runs every operation and wants an error naming file, with the disk untouched.
-	failing := func(t *testing.T, v *Vault, file string) {
-		t.Helper()
-		snap := snapshot(t, v)
-		ops := map[string]func() error{
-			"List":   func() error { _, err := v.List(); return err },
-			"Entry":  func() error { _, err := v.Entry("E"); return err },
-			"Fields": func() error { _, err := v.Fields("E"); return err },
-			"Set": func() error {
-				return v.Set("E", Change{Description: "d", Type: "custom", Fields: []FieldChange{{Name: "v", Value: []byte("x")}}})
-			},
-			"Remove": func() error { return v.Remove("E") },
-		}
-		for op, fn := range ops {
-			err := fn()
-			if err == nil || !strings.Contains(err.Error(), file) {
-				t.Errorf("%s: want an error naming %s, got %v", op, file, err)
-			}
-		}
-		if after := snapshot(t, v); after != snap {
-			t.Errorf("the failed operations changed the directory:\nbefore %s\nafter  %s", snap, after)
-		}
-	}
-
 	t.Run("missing/missing: readers see an empty vault and write nothing; first writer makes key then vault", func(t *testing.T) {
 		v := newVault(t)
 		if l, err := v.List(); err != nil || len(l) != 0 {
@@ -263,6 +239,155 @@ func TestKeyVaultStateTable(t *testing.T) {
 			}
 		}
 	})
+}
+
+// ops is every vault operation, for checks that must hold whichever one runs.
+func ops(v *Vault) map[string]func() error {
+	return map[string]func() error{
+		"List":   func() error { _, err := v.List(); return err },
+		"Entry":  func() error { _, err := v.Entry("E"); return err },
+		"Fields": func() error { _, err := v.Fields("E"); return err },
+		"Set": func() error {
+			return v.Set("E", Change{Description: "d", Type: "custom", Fields: []FieldChange{{Name: "v", Value: []byte("x")}}})
+		},
+		"Remove": func() error { return v.Remove("E") },
+	}
+}
+
+// failing runs every operation and wants an error naming file, with the disk untouched.
+func failing(t *testing.T, v *Vault, file string) {
+	t.Helper()
+	snap := snapshot(t, v)
+	for op, fn := range ops(v) {
+		err := fn()
+		if err == nil || !strings.Contains(err.Error(), file) {
+			t.Errorf("%s: want an error naming %s, got %v", op, file, err)
+		}
+	}
+	if after := snapshot(t, v); after != snap {
+		t.Errorf("the failed operations changed the directory:\nbefore %s\nafter  %s", snap, after)
+	}
+}
+
+// openKeyFile opens v's directory with the key read from keyPath, as AGV_MASTER_KEY_FILE does.
+func openKeyFile(t *testing.T, v *Vault, keyPath string) *Vault {
+	t.Helper()
+	w, err := Open([]string{"AGV_HOME=" + v.dir, KeyFileEnv + "=" + keyPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+// movedOut is a vault with entry E whose master.key was moved to a file outside its directory.
+func movedOut(t *testing.T) (*Vault, string) {
+	t.Helper()
+	v := newVault(t)
+	setValue(t, v, "E", sentinel)
+	keyPath := filepath.Join(t.TempDir(), "agv.key")
+	if err := os.Rename(v.path(keyFile), keyPath); err != nil {
+		t.Fatal(err)
+	}
+	return openKeyFile(t, v, keyPath), keyPath
+}
+
+func TestKeyFileOpensTheVaultAndNoKeyLandsInItsDirectory(t *testing.T) {
+	t.Run("a vault made with master.key opens once the key is moved out", func(t *testing.T) {
+		v, _ := movedOut(t)
+		got, err := v.Fields("E")
+		if err != nil || string(got["value"].Value) != sentinel {
+			t.Fatalf("Fields = %v", err)
+		}
+		setValue(t, v, "F", "y")
+		if _, err := os.Stat(v.path(keyFile)); !os.IsNotExist(err) {
+			t.Fatal("a write made master.key again")
+		}
+	})
+
+	t.Run("a new vault gets the key file's key_id and opens again with it", func(t *testing.T) {
+		keyPath := filepath.Join(t.TempDir(), "agv.key")
+		key := bytes.Repeat([]byte{7}, keySize)
+		os.WriteFile(keyPath, append(encodeKey(key), '\n'), 0o600)
+		v := openKeyFile(t, newVault(t), keyPath)
+		if l, err := v.List(); err != nil || len(l) != 0 {
+			t.Fatalf("List on the empty vault = %v, %v", l, err)
+		}
+		setValue(t, v, "E", sentinel)
+		var f file
+		if err := json.Unmarshal(readFile(t, v, vaultFile), &f); err != nil || f.KeyID != keyID(key) {
+			t.Fatalf("key_id %q is not the key file's (%v)", f.KeyID, err)
+		}
+		if _, err := os.Stat(v.path(keyFile)); !os.IsNotExist(err) {
+			t.Fatal("master.key was made although the key comes from a file")
+		}
+		again := openKeyFile(t, &Vault{dir: v.dir}, keyPath)
+		if got, err := again.Fields("E"); err != nil || string(got["value"].Value) != sentinel {
+			t.Fatalf("reopened Fields = %v", err)
+		}
+	})
+}
+
+// A missing, malformed or wrong key file, or a master.key next to the vault, stops every command
+// before it writes; agv never makes a key to get past it.
+func TestKeyFileProblemsStopEveryCommandAndMakeNoKey(t *testing.T) {
+	for name, spoil := range map[string]func(t *testing.T, v *Vault, keyPath string){
+		"missing":   func(t *testing.T, v *Vault, keyPath string) { os.Remove(keyPath) },
+		"malformed": func(t *testing.T, v *Vault, keyPath string) { os.WriteFile(keyPath, []byte("short\n"), 0o600) },
+		"another key": func(t *testing.T, v *Vault, keyPath string) {
+			os.WriteFile(keyPath, encodeKey(bytes.Repeat([]byte{7}, keySize)), 0o600)
+		},
+		"master.key left in the vault directory": func(t *testing.T, v *Vault, keyPath string) {
+			b, _ := os.ReadFile(keyPath)
+			os.WriteFile(v.path(keyFile), b, 0o600)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v, keyPath := movedOut(t)
+			spoil(t, v, keyPath)
+			before, _ := os.ReadFile(keyPath)
+			failing(t, v, KeyFileEnv)
+			if after, _ := os.ReadFile(keyPath); !bytes.Equal(after, before) {
+				t.Fatal("the key file was written")
+			}
+		})
+	}
+
+	t.Run("missing before the vault exists", func(t *testing.T) {
+		keyPath := filepath.Join(t.TempDir(), "agv.key")
+		v := openKeyFile(t, newVault(t), keyPath)
+		for op, fn := range ops(v) {
+			if err := fn(); err == nil {
+				t.Errorf("%s worked without the key file", op)
+			}
+		}
+		for _, p := range []string{keyPath, v.path(keyFile), v.path(vaultFile)} {
+			if _, err := os.Stat(p); !os.IsNotExist(err) {
+				t.Errorf("%s was created", p)
+			}
+		}
+	})
+
+	t.Run("set but empty", func(t *testing.T) {
+		if _, err := Open([]string{"HOME=/h", KeyFileEnv + "="}); err == nil || !strings.Contains(err.Error(), KeyFileEnv) {
+			t.Fatalf("Open = %v", err)
+		}
+	})
+}
+
+// The variable should hold a path, but a key pasted into it must not reach an error (G-7n9t).
+func TestKeyFileErrorsNeverShowTheVariable(t *testing.T) {
+	pasted := string(bytes.TrimSpace(encodeKey(bytes.Repeat([]byte{9}, keySize))))
+	unreadable := filepath.Join(t.TempDir(), sentinel) // a directory: not "does not exist"
+	os.Mkdir(unreadable, 0o700)
+	for _, val := range []string{pasted, unreadable} {
+		v := openKeyFile(t, newVault(t), val)
+		for op, fn := range ops(v) {
+			err := fn()
+			if err == nil || strings.Contains(err.Error(), val) || !strings.Contains(err.Error(), KeyFileEnv) {
+				t.Errorf("%s with %s=%.12s...: %v", op, KeyFileEnv, val, err)
+			}
+		}
+	}
 }
 
 // snapshot is the content of the vault directory except the lock file.

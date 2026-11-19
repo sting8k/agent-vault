@@ -138,8 +138,11 @@ bodies and `--json` carry the full name unchanged (Go's JSON encoder does not es
   after all prompts are answered. Readers take no lock.
 - A write creates a 0600 temp file in the same directory, fsyncs it, renames it over `vault.json`,
   then fsyncs the directory.
-- The key sits next to the data, so this defeats accidental reads only. A later version may move
-  the key into the OS keychain without changing `vault.json`.
+- By default the key sits next to the data, so this defeats accidental reads only. A later version
+  may move the key into the OS keychain without changing `vault.json`.
+- `AGV_MASTER_KEY_FILE` names a file that holds the key instead, in the same format (D-44pj). Then
+  agv reads the key only from that file, and the vault directory holds no key. There is no variable
+  that holds the key itself: every process the shell starts would inherit it.
 
 Key and vault states, checked on every command:
 
@@ -150,6 +153,13 @@ Key and vault states, checked on every command:
 | missing | present | error: key lost; entries cannot be decrypted; restore the key |
 | present | present, `key_id` differs | error: wrong key for this vault |
 | any | unreadable or invalid JSON | error naming the file; nothing is overwritten |
+
+With `AGV_MASTER_KEY_FILE` set, this table is replaced. The key file is read on every command, even
+for a vault that does not exist yet, and is never created or written. Each of these is an error,
+and no file is written: the variable set but empty, the file missing or malformed, a `master.key`
+in the vault directory (every backup of it would carry the key), or a `key_id` that differs.
+Errors name the variable, never its value, in case a key was pasted in place of a path. `agv run`
+passes the variable to CMD unchanged: it is a path, and `agv` inside `agv run` needs it.
 
 Humans are told to back up `master.key` and `vault.json` together; a lost key cannot be recovered.
 The key is text so it can be pasted into a password manager and back; surrounding whitespace is

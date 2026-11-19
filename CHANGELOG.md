@@ -2,6 +2,22 @@
 
 All notable changes to agv. Each release on GitHub shows the section for its tag.
 
+## [0.3.0] - 2026-11-19
+
+### Added
+
+- `AGV_MASTER_KEY_FILE=PATH` keeps the master key outside the vault folder (a mounted disk, a
+  Docker secret such as `/run/secrets/agv_master_key`), so copies and backups of `~/.agent-vault`
+  no longer carry the key. agv reads the key only from that file and never creates it. A missing
+  or wrong key file, an empty variable, or a `master.key` still in the vault folder is an error
+  instead of a new key. Errors name the variable, never its value. To move an existing vault:
+  `mv ~/.agent-vault/master.key /secure/agv.key`, then set the variable. See "Keep the key
+  elsewhere" in the README. Without the variable nothing changes.
+
+### Changed
+
+- Built with Go 1.27.4, which fixes a security issue in `net/http`.
+
 ## [0.2.0] - 2026-10-27
 
 ### Added

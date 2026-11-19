@@ -35,7 +35,8 @@ Values are never accepted on the command line.
 Name, description, type, field names, env names and file flags are stored in plain text and
 'agv list' shows them to agents: never put a secret in them.
 Back up master.key and vault.json together (in AGV_HOME or ~/.agent-vault);
-a lost key cannot be recovered.
+a lost key cannot be recovered. AGV_MASTER_KEY_FILE=PATH reads the key from PATH instead
+of master.key, so the vault directory holds no key; agv never creates that file.
 `
 
 const nonInteractiveForm = `  agv set NAME --type TYPE --desc TEXT --field FIELD=@PATH [--field FIELD=-] [--unset FIELD]
@@ -143,7 +144,14 @@ func runSet(argv []string, sys IO) error {
 	if err := v.Set(name, d.change()); err != nil {
 		return err
 	}
-	d.report(sys.Stdout, len(all) == 0)
+	d.report(sys.Stdout)
+	if len(all) == 0 {
+		if v.KeyFromFile() {
+			fmt.Fprintln(sys.Stdout, "Back up vault.json, and the key file apart from it; a lost key cannot be recovered.")
+		} else {
+			fmt.Fprintln(sys.Stdout, "Back up master.key and vault.json together; a lost key cannot be recovered.")
+		}
+	}
 	tr.done(audit.ActionSet, name)
 	return nil
 }

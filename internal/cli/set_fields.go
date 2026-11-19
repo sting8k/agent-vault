@@ -286,7 +286,7 @@ func (d *draft) change() vault.Change {
 }
 
 // report says what was saved and how an agent would use it. It names fields, never values.
-func (d *draft) report(w io.Writer, first bool) {
+func (d *draft) report(w io.Writer) {
 	c := d.change()
 	fmt.Fprintf(w, "Saved %s (%s).\n", d.name, d.typ)
 	if len(d.unset) > 0 {
@@ -311,7 +311,4 @@ func (d *draft) report(w io.Writer, first bool) {
 		ref = "file:" + ref
 	}
 	fmt.Fprintf(w, "  agv run -- COMMAND '{{%s}}'\n", ref)
-	if first {
-		fmt.Fprintln(w, "Back up master.key and vault.json together; a lost key cannot be recovered.")
-	}
 }

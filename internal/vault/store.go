@@ -58,7 +58,12 @@ func (v *Vault) path(name string) string { return filepath.Join(v.dir, name) }
 //
 // vault.json is read before master.key: a writer makes the key before the vault, so a reader
 // that sees the vault always finds the key, and a half-written key is never read by a reader.
+//
+// With KeyFileEnv set, loadWithKeyFile replaces this table.
 func (v *Vault) load(create bool) (*file, []byte, error) {
+	if v.keyPath != "" {
+		return v.loadWithKeyFile()
+	}
 	f, err := v.readVault()
 	if err != nil {
 		return nil, nil, err
@@ -93,6 +98,32 @@ func (v *Vault) load(create bool) (*file, []byte, error) {
 	return empty, key, nil
 }
 
+// loadWithKeyFile is load when KeyFileEnv names the key (D-44pj). The key must be there before
+// anything else happens, even for a reader of an empty vault, and agv never creates it. A
+// master.key in the vault directory is refused: every backup of the directory would carry it.
+func (v *Vault) loadWithKeyFile() (*file, []byte, error) {
+	if _, err := os.Lstat(v.path(keyFile)); err == nil {
+		return nil, nil, fmt.Errorf("%s is set, but %s exists too; move that key out of the vault directory, where every backup would carry it",
+			KeyFileEnv, v.path(keyFile))
+	}
+	key, err := v.readKey()
+	if err != nil {
+		return nil, nil, err
+	}
+	f, err := v.readVault()
+	if err != nil {
+		return nil, nil, err
+	}
+	if f == nil {
+		return &file{Version: fileVersion, KeyID: keyID(key), Entries: map[string]*entry{}}, key, nil
+	}
+	if keyID(key) != f.KeyID {
+		return nil, nil, fmt.Errorf("the file %s names is the wrong key for %s; restore the key that belongs to this vault",
+			KeyFileEnv, v.path(vaultFile))
+	}
+	return f, key, nil
+}
+
 // readVault returns nil, nil when vault.json does not exist.
 func (v *Vault) readVault() (*file, error) {
 	p := v.path(vaultFile)
@@ -117,15 +148,31 @@ func (v *Vault) readVault() (*file, error) {
 // manager and pasted back. Surrounding whitespace is ignored on read (editors add newlines).
 func encodeKey(key []byte) []byte { return []byte(hex.EncodeToString(key) + "\n") }
 
+// readKey reads master.key, or the file KeyFileEnv names when it is set. Errors about that file
+// show the variable, never its value: a key pasted into the variable instead of a path must not
+// reach the output (G-7n9t).
 func (v *Vault) readKey() ([]byte, error) {
-	p := v.path(keyFile)
+	p, label := v.path(keyFile), v.path(keyFile)
+	if v.keyPath != "" {
+		p, label = v.keyPath, "the file "+KeyFileEnv+" names"
+	}
 	text, err := os.ReadFile(p)
+	if err != nil && v.keyPath != "" {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%s does not exist; agv never creates it (for a new vault: umask 077; openssl rand -hex 32 > FILE)", label)
+		}
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err // drop the path
+		}
+		return nil, fmt.Errorf("cannot read %s: %v", label, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", p, err)
 	}
 	key, err := hex.DecodeString(string(bytes.TrimSpace(text)))
 	if err != nil || len(key) != keySize {
-		return nil, fmt.Errorf("%s must hold %d hex characters; restore the key", p, 2*keySize)
+		return nil, fmt.Errorf("%s must hold %d hex characters; restore the key", label, 2*keySize)
 	}
 	return key, nil
 }

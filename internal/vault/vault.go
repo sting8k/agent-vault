@@ -16,8 +16,15 @@ import (
 // MaxValueSize is the largest field value. It matches the cap the redactor applies to a run.
 const MaxValueSize = 1 << 20
 
-// Vault is a handle on one vault directory. It holds no state: every call reads the disk.
-type Vault struct{ dir string }
+// KeyFileEnv names a file that holds the master key instead of master.key in the vault directory
+// (decision D-44pj). agv never creates that file.
+const KeyFileEnv = "AGV_MASTER_KEY_FILE"
+
+// Vault is a handle on one vault directory and its key. It holds no state: every call reads the disk.
+type Vault struct {
+	dir     string
+	keyPath string // the file KeyFileEnv names; "" means master.key in dir
+}
 
 // Home returns the vault directory: AGV_HOME from env (os.Environ form), else $HOME/.agent-vault.
 func Home(env []string) (string, error) {
@@ -31,25 +38,39 @@ func Home(env []string) (string, error) {
 }
 
 func getenv(env []string, key string) string {
-	for _, kv := range env {
-		if k, v, ok := strings.Cut(kv, "="); ok && k == key {
-			return v
-		}
-	}
-	return ""
+	v, _ := lookupEnv(env, key)
+	return v
 }
 
-// Open returns a handle on the vault directory chosen by Home. It touches no files.
+func lookupEnv(env []string, key string) (string, bool) {
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == key {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// Open returns a handle on the vault directory chosen by Home and the key KeyFileEnv names, if set.
+// It touches no files. An empty KeyFileEnv is an error, not "unset": falling back would put a new
+// master.key next to the vault, which is what the variable is there to avoid.
 func Open(env []string) (*Vault, error) {
 	dir, err := Home(env)
 	if err != nil {
 		return nil, err
 	}
-	return &Vault{dir: dir}, nil
+	keyPath, set := lookupEnv(env, KeyFileEnv)
+	if set && keyPath == "" {
+		return nil, fmt.Errorf("%s is set but empty; name the key file, or unset it to use master.key in the vault directory", KeyFileEnv)
+	}
+	return &Vault{dir: dir, keyPath: keyPath}, nil
 }
 
 // Dir is the vault directory.
 func (v *Vault) Dir() string { return v.dir }
+
+// KeyFromFile reports whether the key comes from the file KeyFileEnv names.
+func (v *Vault) KeyFromFile() bool { return v.keyPath != "" }
 
 // FieldInfo is the plaintext metadata of one field.
 type FieldInfo struct {

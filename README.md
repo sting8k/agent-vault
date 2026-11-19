@@ -123,12 +123,30 @@ by hand (`chmod 600`):
 - A log or webhook that fails is a warning on stderr; the command still runs and keeps its exit
   code. A `config.json` agv cannot read is an error until you fix it.
 
+## Keep the key elsewhere
+
+By default the key is `~/.agent-vault/master.key`, next to the secrets it decrypts, so a copy of
+that folder can be read by anyone who gets it. To keep the key out of it, point
+`AGV_MASTER_KEY_FILE` at a file that holds it (a mounted disk, a Docker secret such as
+`/run/secrets/agv_master_key`):
+
+```sh
+mv ~/.agent-vault/master.key /secure/agv.key              # an existing vault: move its key
+(umask 077; openssl rand -hex 32 > /secure/agv.key)       # or a new vault: make one
+export AGV_MASTER_KEY_FILE=/secure/agv.key
+```
+
+agv then reads the key only from that file and never creates it. A missing or wrong key file, or
+a `master.key` still in the folder, is an error instead of a new key. Back the key file up apart
+from the vault. Copies and backups of the folder then carry no key; a program running as you can
+still read the key file.
+
 ## Limits
 
 - **Storage:** `~/.agent-vault/` holds `vault.json` (values encrypted with AES-256-GCM) and
-  `master.key`. Anyone who can read both can decrypt. **Back up both files together**: a lost
-  key cannot be recovered. The key is one line of hex text, so a password manager is a good place
-  for it (keep it apart from the vault backup).
+  `master.key` (unless [the key is elsewhere](#keep-the-key-elsewhere)). Anyone who can read both
+  can decrypt. **Back up both**: a lost key cannot be recovered. The key is one line of hex text,
+  so a password manager is a good place for it (keep it apart from the vault backup).
 - **Output masking is best-effort.** agv masks the raw value and its base64, URL-encoded and
   JSON-escaped forms. A command that reverses, slices or otherwise rewrites a secret gets past it,
   and so does anything the command writes to files or sends over the network.

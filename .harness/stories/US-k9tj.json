@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "id": "US-k9tj",
+  "title": "Master key from AGV_MASTER_KEY_FILE (issue #2)",
+  "lane": "high_risk",
+  "status": "implemented",
+  "packet": "docs/stories/US-k9tj-master-key-from-agv-master-key-file-issu.md",
+  "contract": "docs/design.md",
+  "verify": "export PATH=$HOME/.local/go/bin:$PATH && test -z \"$(gofmt -l .)\" && go vet ./... && go test -race ./...",
+  "last_verify": {
+    "result": "pass",
+    "exit_code": 0,
+    "command": "export PATH=$HOME/.local/go/bin:$PATH && test -z \"$(gofmt -l .)\" && go vet ./... && go test -race ./...",
+    "commit": "267edf9",
+    "at": "2026-11-19T06:59:56Z"
+  },
+  "created_at": "2026-11-19T06:56:04Z",
+  "updated_at": "2026-11-19T06:59:56Z"
+}
